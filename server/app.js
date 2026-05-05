@@ -358,6 +358,60 @@ app.post('/api/call/check-expired', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Server error' }); }
 });
 
+// Admin approve refund
+app.post('/api/admin/approve-refund', async (req, res) => {
+  try {
+    const { refundId } = req.body;
+    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+
+    const { data: refund } = await supabase
+      .from('refund_requests')
+      .select('*, payments(*)')
+      .eq('id', refundId)
+      .single();
+
+    if (!refund) return res.status(404).json({ error: 'Refund not found' });
+    if (refund.status === 'approved') return res.status(400).json({ error: 'Already approved' });
+
+    const pay = refund.payments;
+
+    // Trigger Paystack refund
+    const refundRes = await fetch('https://api.paystack.co/refund', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        transaction: pay.paystack_ref,
+        amount: Math.round((refund.refund_amount || pay.total_charged || pay.amount) * 100),
+      }),
+    });
+    const refundData = await refundRes.json();
+
+    if (!refundData.status) {
+      return res.status(400).json({ error: refundData.message || 'Paystack refund failed' });
+    }
+
+    // Update refund request status
+    await supabase.from('refund_requests').update({
+      status: 'approved',
+      resolved_at: new Date().toISOString(),
+    }).eq('id', refundId);
+
+    // Update payment status
+    await supabase.from('payments').update({
+      status: 'refunded',
+    }).eq('id', refund.payment_id);
+
+    return res.json({ success: true, message: 'Refund approved and processed via Paystack' });
+
+  } catch (err) {
+    console.error('[Admin Refund] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => res.json({
   ok: true,
