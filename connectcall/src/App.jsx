@@ -1434,8 +1434,25 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
                           {pay.status==="confirmed" && (
                             <div style={{ padding:"10px", borderRadius:8, background:`${c.green}10`, border:`1px solid ${c.green}30` }}>
                               <div style={{ fontSize:12, fontWeight:600, color:c.green, marginBottom:4 }}>✓ Confirmed — Contacts Revealed</div>
-                              <div>📞 Watcher: <strong>{pay.watcher_contact||"No number"}</strong></div>
-                              <div style={{ fontSize:12, color:c.sub }}>via {pay.watcher_platform||"—"}</div>
+                              {(() => {
+  const number = pay.watcher_contact || "";
+  const platform = pay.watcher_platform || "WhatsApp";
+  const digits = number.replace(/\D/g, "");
+  const intl = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
+  const link = platform === "Telegram"
+    ? `https://t.me/+${intl}`
+    : `https://wa.me/${intl}`;
+  return (
+    <a href={link} target="_blank" rel="noopener noreferrer"
+      style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"10px 16px", borderRadius:10, background:platform==="Telegram"?`#0088cc22`:`#25D36622`, border:`1px solid ${platform==="Telegram"?"#0088cc":"#25D366"}`, textDecoration:"none", marginTop:6 }}>
+      <span style={{ fontSize:20 }}>{platform==="Telegram"?"✈️":"💬"}</span>
+      <div>
+        <div style={{ fontFamily:"'DM Mono',monospace", fontSize:15, color:platform==="Telegram"?"#0088cc":"#25D366", fontWeight:700 }}>{number}</div>
+        <div style={{ fontSize:11, color:c.sub }}>Tap to call on {platform}</div>
+      </div>
+    </a>
+  );
+})()}
                             </div>
                           )}
                           {conf && conf.status === "pending" && (
@@ -2073,8 +2090,25 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
           {(p.status==="confirmed" || isDone) && p.host_contact_revealed && (
             <div style={{ padding:"10px 14px", borderRadius:8, background:`${c.green}10`, border:`1px solid ${c.green}30`, marginBottom:10 }}>
               <div style={{ fontSize:11, color:c.green, marginBottom:3 }}>✓ Host Contact</div>
-              <div style={{ fontFamily:"'DM Mono',monospace", fontSize:16, color:c.green, fontWeight:700 }}>{p.host_contact_revealed}</div>
-              <div style={{ fontSize:11, color:c.sub, marginTop:2 }}>via {p.host_platform_revealed||"WhatsApp"}</div>
+              {(() => {
+  const number = p.host_contact_revealed || "";
+  const platform = p.host_platform_revealed || "WhatsApp";
+  const digits = number.replace(/\D/g, "");
+  const intl = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
+  const link = platform === "Telegram"
+    ? `https://t.me/+${intl}`
+    : `https://wa.me/${intl}`;
+  return (
+    <a href={link} target="_blank" rel="noopener noreferrer"
+      style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"10px 16px", borderRadius:10, background:platform==="Telegram"?`#0088cc22`:`#25D36622`, border:`1px solid ${platform==="Telegram"?"#0088cc":"#25D366"}`, textDecoration:"none", marginTop:6 }}>
+      <span style={{ fontSize:20 }}>{platform==="Telegram"?"✈️":"💬"}</span>
+      <div>
+        <div style={{ fontFamily:"'DM Mono',monospace", fontSize:15, color:platform==="Telegram"?"#0088cc":"#25D366", fontWeight:700 }}>{number}</div>
+        <div style={{ fontSize:11, color:c.sub }}>Tap to call on {platform}</div>
+      </div>
+    </a>
+  );
+})()}
             </div>
           )}
 
