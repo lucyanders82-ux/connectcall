@@ -85,4 +85,54 @@ router.post('/create-recipient', async (req, res) => {
   }
 });
 
+router.post('/approve-refund', async (req, res) => {
+  try {
+    const { refundId } = req.body;
+    const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+
+    const { data: refund } = await supabase
+      .from('refund_requests')
+      .select('*, payments(*)')
+      .eq('id', refundId)
+      .single();
+
+    if (!refund) return res.status(404).json({ error: 'Refund not found' });
+    if (refund.status === 'approved') return res.status(400).json({ error: 'Already approved' });
+
+    const pay = refund.payments;
+
+    const refundRes = await fetch('https://api.paystack.co/refund', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        transaction: pay.paystack_ref,
+        amount: Math.round((refund.refund_amount || pay.total_charged || pay.amount) * 100),
+      }),
+    });
+    const refundData = await refundRes.json();
+
+    if (!refundData.status) {
+      return res.status(400).json({ error: refundData.message || 'Paystack refund failed' });
+    }
+
+    await supabase.from('refund_requests').update({
+      status: 'approved',
+      resolved_at: new Date().toISOString(),
+    }).eq('id', refundId);
+
+    await supabase.from('payments').update({
+      status: 'refunded',
+    }).eq('id', refund.payment_id);
+
+    return res.json({ success: true, message: 'Refund approved and processed via Paystack' });
+
+  } catch (err) {
+    console.error('[Admin Refund] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 export default router;
