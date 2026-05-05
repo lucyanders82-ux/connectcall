@@ -2589,32 +2589,93 @@ function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, r
         )}
 
         {tab==="refunds" && (
-          <div>
-            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, marginBottom:18 }}>Refund Requests</div>
-            {refundReqs.length===0 && <div style={{ color:c.sub, textAlign:"center", padding:"40px 0" }}>No refund requests.</div>}
-            {refundReqs.map(r=>{
-              const pay = payments.find(p=>p.id===r.payment_id);
-              return (
-                <div key={r.id} style={{ background:c.card, border:`1px solid ${r.status==="pending"||r.status==="pending_host"?c.orange:c.border}`, borderRadius:14, padding:20, marginBottom:12 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:10, marginBottom:10 }}>
-                    <div>
-                      <div style={{ fontWeight:600 }}>{r.watcher_name} — {pay?.target_user_id ? (users.find(u=>u.id===pay.target_user_id)?.name||"Host") : "Host"}</div>
-                      <div style={{ fontSize:12, color:c.sub }}>{r.refund_type||"Manual"} | {r.status}</div>
-                    </div>
-                    <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, color:c.goldL, fontWeight:600 }}>{S}{r.refund_amount||pay?.total_charged||0}</div>
-                  </div>
-                  <div style={{ padding:"10px 14px", background:c.surface, borderRadius:8, marginBottom:12, fontSize:13 }}>{r.reason}</div>
-                  {(r.status==="pending"||r.status==="pending_host") && (
-                    <div style={{ display:"flex", gap:10 }}>
-                      <Btn small variant="green" onClick={()=>onApproveRefund(r.id)}>Approve</Btn>
-                      <Btn small variant="red" onClick={()=>onDenyRefund(r.id)}>Deny</Btn>
-                    </div>
-                  )}
+  <div>
+    <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, marginBottom:18 }}>Refund Requests</div>
+    {refundReqs.length===0 && (
+      <div style={{ color:c.sub, textAlign:"center", padding:"40px 0" }}>No refund requests.</div>
+    )}
+    {refundReqs.map(r=>{
+      const pay = payments.find(p=>p.id===r.payment_id);
+      const host = users.find(u=>u.id===pay?.target_user_id);
+      const isDispute = r.reason?.toLowerCase().includes("call did not") || r.reason?.toLowerCase().includes("dispute") || r.refund_type==="dispute";
+      const isPending = r.status==="pending" || r.status==="pending_host";
+      const isApproved = r.status==="approved";
+      const isDenied = r.status==="denied";
+      return (
+        <div key={r.id} style={{
+          background:c.card,
+          border:`1px solid ${isDispute?c.red:isPending?c.orange:isApproved?c.green:c.border}`,
+          borderRadius:14, padding:20, marginBottom:12
+        }}>
+          {/* Header */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:10, marginBottom:10 }}>
+            <div>
+              {isDispute && (
+                <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:`${c.red}15`, border:`1px solid ${c.red}40`, borderRadius:20, padding:"3px 10px", marginBottom:8 }}>
+                  <span style={{ fontSize:12 }}>⚠️</span>
+                  <span style={{ fontSize:11, fontWeight:700, color:c.red, letterSpacing:.5 }}>DISPUTED CALL</span>
                 </div>
-              );
-            })}
+              )}
+              <div style={{ fontWeight:600, fontSize:15 }}>
+                {r.watcher_name} → {host?.name||"Host"}
+              </div>
+              <div style={{ fontSize:12, color:c.sub, marginTop:2 }}>
+                {r.refund_type||"Manual"} · {new Date(r.created_at).toLocaleString()}
+              </div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:c.goldL, fontWeight:600 }}>
+                {S}{r.refund_amount||pay?.total_charged||0}
+              </div>
+              <div style={{ fontSize:11, fontWeight:700, marginTop:4, color:isPending?c.orange:isApproved?c.green:isDenied?c.red:c.sub }}>
+                {isPending?"⏳ Awaiting Review":isApproved?"✅ Refund Approved":isDenied?"❌ Denied":"—"}
+              </div>
+            </div>
           </div>
-        )}
+
+          {/* Reason */}
+          <div style={{ padding:"10px 14px", background:isDispute?`${c.red}10`:c.surface, border:`1px solid ${isDispute?c.red+"30":c.border}`, borderRadius:8, marginBottom:12, fontSize:13, color:isDispute?c.text:c.sub }}>
+            {isDispute && <span style={{ fontWeight:600, color:c.red }}>Watcher says: </span>}
+            {r.reason}
+          </div>
+
+          {/* Payment details */}
+          {pay && (
+            <div style={{ display:"flex", gap:16, flexWrap:"wrap", fontSize:12, color:c.sub, marginBottom:12, padding:"8px 12px", background:c.surface, borderRadius:8 }}>
+              <span>Payment: <strong style={{ color:c.text }}>{S}{pay.total_charged||pay.amount}</strong></span>
+              <span>Status: <strong style={{ color:c.text }}>{pay.status}</strong></span>
+              <span>Ref: <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>{pay.paystack_ref}</span></span>
+            </div>
+          )}
+
+          {/* Actions */}
+          {isPending && (
+            <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+              <Btn small variant="green" onClick={()=>onApproveRefund(r.id)}>
+                ✅ Approve & Refund
+              </Btn>
+              <Btn small variant="red" onClick={()=>onDenyRefund(r.id)}>
+                ❌ Deny Refund
+              </Btn>
+            </div>
+          )}
+
+          {isApproved && (
+            <div style={{ fontSize:12, color:c.green, fontWeight:600 }}>
+              💸 Refund processed — funds returned to watcher
+            </div>
+          )}
+
+          {isDenied && (
+            <div style={{ fontSize:12, color:c.red }}>
+              ❌ Refund denied — payment remains with host
+            </div>
+          )}
+        </div>
+      );
+    })}
+  </div>
+)}
 
         {tab==="reports" && (
           <div>
@@ -2651,9 +2712,14 @@ function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, r
                   {r.details && (
                     <div style={{ padding:"10px 14px", background:c.surface, borderRadius:8, marginBottom:12, fontSize:13, color:c.sub }}>{r.details}</div>
                   )}
-                  <div style={{ fontSize:12, fontWeight:600, color:r.status==="pending"?c.orange:r.status==="resolved"?c.green:c.sub }}>
-                    {r.status==="pending"?"⏳ Pending review":r.status==="resolved"?"✅ Resolved":"❌ Dismissed"}
-                  </div>
+                  <div style={{ fontSize:12, fontWeight:600 }}>
+  {r.refund_type==="dispute" || r.reason?.toLowerCase().includes("dispute") || r.reason?.toLowerCase().includes("call did not")
+    ? <span style={{ color:c.red }}>⚠️ Disputed — watcher says call didn't happen</span>
+    : null}
+  <span style={{ color:r.status==="pending"||r.status==="pending_host"?c.orange:r.status==="approved"?c.green:c.red, marginLeft:4 }}>
+    {r.status==="pending"||r.status==="pending_host"?"⏳ Awaiting review":r.status==="approved"?"✅ Approved":"❌ Denied"}
+  </span>
+</div>
                 </div>
               );
             })}
