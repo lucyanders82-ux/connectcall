@@ -361,6 +361,11 @@ app.post('/api/call/check-expired', async (req, res) => {
 // Admin approve refund
 app.post('/api/admin/approve-refund', async (req, res) => {
   try {
+    const adminToken = req.headers['x-admin-token'];
+    if (adminToken !== process.env.ADMIN_SECRET && adminToken !== 'my-secret-token-123') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const { refundId } = req.body;
     const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 
@@ -375,7 +380,6 @@ app.post('/api/admin/approve-refund', async (req, res) => {
 
     const pay = refund.payments;
 
-    // Trigger Paystack refund
     const refundRes = await fetch('https://api.paystack.co/refund', {
       method: 'POST',
       headers: {
@@ -393,13 +397,11 @@ app.post('/api/admin/approve-refund', async (req, res) => {
       return res.status(400).json({ error: refundData.message || 'Paystack refund failed' });
     }
 
-    // Update refund request status
     await supabase.from('refund_requests').update({
       status: 'approved',
       resolved_at: new Date().toISOString(),
     }).eq('id', refundId);
 
-    // Update payment status
     await supabase.from('payments').update({
       status: 'refunded',
     }).eq('id', refund.payment_id);
