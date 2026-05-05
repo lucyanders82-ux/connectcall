@@ -640,6 +640,8 @@ export default function App() {
     if (currentUser?.id) await supabase.from("users").update({ online:false }).eq("id", currentUser.id);
     setCurrentUser(null); setIsAdmin(false); setView("home");
     localStorage.removeItem("user"); localStorage.removeItem("view"); localStorage.removeItem("isAdmin");
+    // Clear remember-me on explicit logout
+    localStorage.removeItem("rememberedName"); localStorage.removeItem("rememberedPass");
     toast("Logged out");
   };
 
@@ -970,7 +972,7 @@ export default function App() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  HOME VIEW
+//  HOME VIEW — blurred host images for non-logged-in visitors
 // ═══════════════════════════════════════════════════════════════
 function HomeView({ setView, users, favorites, toggleFavorite, currentUser }) {
   const allHosts = users.filter(u=>u.role==="host");
@@ -1010,6 +1012,11 @@ function HomeView({ setView, users, favorites, toggleFavorite, currentUser }) {
             <div style={{ textAlign:"center", marginBottom:40 }}>
               <div style={{ fontFamily:"'Playfair Display',serif", fontSize:34, marginBottom:8, color:c.goldL }}>Featured Consultants</div>
               <div style={{ color:c.sub, fontSize:14 }}>Available now</div>
+              {!currentUser && (
+                <div style={{ marginTop:10, fontSize:13, color:c.sub }}>
+                  <span style={{ color:c.gold, cursor:"pointer", textDecoration:"underline" }} onClick={()=>setView("signup")}>Sign up</span> or <span style={{ color:c.gold, cursor:"pointer", textDecoration:"underline" }} onClick={()=>setView("login")}>sign in</span> to see full profiles
+                </div>
+              )}
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:20 }}>
               {online.slice(0,9).map((u,i)=>(
@@ -1035,22 +1042,32 @@ function HomeView({ setView, users, favorites, toggleFavorite, currentUser }) {
   );
 }
 
+// CHANGE 3: Host card with blur for non-logged-in users
 function HomeHostCard({ u, i, setView, favorites, toggleFavorite, currentUser }) {
   const isFav = favorites.some(f => f.host_id === u.id && f.watcher_id === currentUser?.id);
+  const isBlurred = !currentUser;
   return (
     <div className="fu" style={{ animationDelay:`${i*0.05}s`, background:`linear-gradient(180deg,${c.card},#1a1a24)`, border:`1px solid ${c.border}`, borderRadius:18, overflow:"hidden", cursor:"pointer", transition:"all .3s", position:"relative" }}
-      onClick={()=>setView("browse")}
+      onClick={()=>isBlurred ? setView("signup") : setView("browse")}
       onMouseEnter={e=>{e.currentTarget.style.borderColor=c.gold;e.currentTarget.style.transform="translateY(-4px)";}}
       onMouseLeave={e=>{e.currentTarget.style.borderColor=c.border;e.currentTarget.style.transform="";}}>
-      <button onClick={e=>{ e.stopPropagation(); toggleFavorite(u.id); }}
-        style={{ position:"absolute", top:12, right:12, zIndex:10, background:"#0a0a0fcc", border:"none", borderRadius:"50%", width:32, height:32, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:16, color:isFav?c.gold:c.sub }}>
-        {isFav?"❤️":"♡"}
-      </button>
+      {currentUser && (
+        <button onClick={e=>{ e.stopPropagation(); toggleFavorite(u.id); }}
+          style={{ position:"absolute", top:12, right:12, zIndex:10, background:"#0a0a0fcc", border:"none", borderRadius:"50%", width:32, height:32, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:16, color:isFav?c.gold:c.sub }}>
+          {isFav?"❤️":"♡"}
+        </button>
+      )}
       <div style={{ position:"relative", width:"100%", aspectRatio:"1/1", overflow:"hidden" }}>
         {u.profilePhoto ? (
-          <img src={u.profilePhoto} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+          <img src={u.profilePhoto} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", filter:isBlurred?"blur(10px) brightness(0.7)":"none", transform:isBlurred?"scale(1.05)":"none", transition:"filter .3s" }} />
         ) : (
           <div style={{ width:"100%", height:"100%", background:`linear-gradient(135deg,${c.goldD},#1a1a2e)`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Cormorant Garamond',serif", fontSize:48, color:c.gold, opacity:.3 }}>{u.avatar}</div>
+        )}
+        {isBlurred && (
+          <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8, zIndex:3 }}>
+            <div style={{ fontSize:28 }}>🔐</div>
+            <div style={{ color:"#fff", fontWeight:600, fontSize:13, textAlign:"center", lineHeight:1.4 }}>Sign up to<br/>view profile</div>
+          </div>
         )}
         <div style={{ position:"absolute", bottom:0, left:0, right:0, height:40, background:"linear-gradient(to top,#0a0a0fcc,transparent)" }} />
         <div style={{ position:"absolute", top:10, right:12, display:"flex", alignItems:"center", gap:5, background:"#0a0a0f99", padding:"3px 8px", borderRadius:20, zIndex:2 }}>
@@ -1060,15 +1077,29 @@ function HomeHostCard({ u, i, setView, favorites, toggleFavorite, currentUser })
       </div>
       <div style={{ padding:"14px 16px 16px" }}>
         <div style={{ fontWeight:600, fontSize:15, marginBottom:2 }}>{u.name}</div>
-        <HostRating hostId={u.id} />
-        <div style={{ color:c.sub, fontSize:11, marginBottom:8 }}>{(u.bio||"").slice(0,45)}{(u.bio||"").length>45?"…":""}</div>
-        <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:10 }}>{safeArr(u.tags).slice(0,3).map(t=><Chip key={t} label={t}/>)}</div>
+        {!isBlurred && <HostRating hostId={u.id} />}
+        <div style={{ color:c.sub, fontSize:11, marginBottom:8 }}>
+          {isBlurred ? "Sign up to see full bio" : `${(u.bio||"").slice(0,45)}${(u.bio||"").length>45?"…":""}`}
+        </div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:10 }}>
+          {isBlurred
+            ? <Chip label="••••" /><Chip label="••••" />
+            : safeArr(u.tags).slice(0,3).map(t=><Chip key={t} label={t}/>)
+          }
+        </div>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
-            <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, color:c.goldL, fontWeight:600 }}>{S}{u.rate}</div>
-            <div style={{ color:c.dim, fontSize:10 }}>via {u.platform}</div>
+            {isBlurred
+              ? <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, color:c.sub, fontWeight:600 }}>₵ ••</div>
+              : <>
+                  <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, color:c.goldL, fontWeight:600 }}>{S}{u.rate}</div>
+                  <div style={{ color:c.dim, fontSize:10 }}>via {u.platform}</div>
+                </>
+            }
           </div>
-          <div style={{ width:30, height:30, borderRadius:"50%", border:`1px solid ${c.gold}50`, display:"flex", alignItems:"center", justifyContent:"center", color:c.gold, fontSize:13 }}>→</div>
+          <div style={{ width:30, height:30, borderRadius:"50%", border:`1px solid ${isBlurred?c.sub+"50":c.gold+"50"}`, display:"flex", alignItems:"center", justifyContent:"center", color:isBlurred?c.sub:c.gold, fontSize:13 }}>
+            {isBlurred?"🔒":"→"}
+          </div>
         </div>
       </div>
     </div>
@@ -1239,11 +1270,24 @@ function SignupView({ onSignup, setView, toast }) {
   );
 }
 
+// CHANGE 1: Remember Me login
 function LoginView({ onLogin, setView }) {
-  const [name, setName] = useState("");
-  const [pass, setPass] = useState("");
+  const [name, setName] = useState(() => localStorage.getItem("rememberedName") || "");
+  const [pass, setPass] = useState(() => localStorage.getItem("rememberedPass") || "");
+  const [remember, setRemember] = useState(() => !!localStorage.getItem("rememberedName"));
   const [busy, setBusy] = useState(false);
-  const submit = async () => { setBusy(true); await onLogin(name, pass); setBusy(false); };
+  const submit = async () => {
+    if (remember) {
+      localStorage.setItem("rememberedName", name);
+      localStorage.setItem("rememberedPass", pass);
+    } else {
+      localStorage.removeItem("rememberedName");
+      localStorage.removeItem("rememberedPass");
+    }
+    setBusy(true);
+    await onLogin(name, pass);
+    setBusy(false);
+  };
   return (
     <div style={{ minHeight:"calc(100vh - 60px)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
       <div style={{ maxWidth:400, width:"100%", background:`linear-gradient(180deg,${c.card},#1a1a24)`, border:`1px solid ${c.border}`, borderRadius:24, padding:40, animation:"fadeUp .4s ease", boxShadow:`0 24px 60px #00000044` }}>
@@ -1252,6 +1296,10 @@ function LoginView({ onLogin, setView }) {
         </div>
         <Field label="Your Full Name" value={name} onChange={setName} placeholder="Exactly as registered" />
         <Field label="Password" value={pass} onChange={setPass} type="password" placeholder="••••••••" />
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+          <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)} style={{ width:16, height:16, accentColor:c.gold }} />
+          <span style={{ fontSize:12, color:c.sub }}>Remember me</span>
+        </div>
         <Btn onClick={submit} full disabled={busy} style={{ marginTop:8 }}>{busy?"Signing in…":"Sign In →"}</Btn>
         <div style={{ textAlign:"center", marginTop:14, color:c.sub, fontSize:13 }}>
           New? <span style={{ color:c.gold, cursor:"pointer" }} onClick={()=>setView("signup")}>Create a profile</span>
@@ -1281,21 +1329,16 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
   const myVP    = verifyPrompts.filter(v=>!v.answered && myPay.some(p=>p.id===v.payment_id||p.id===v.paymentId));
   const hostRefundReqs = refundReqs.filter(r=>r.status==="pending_host" && myPay.some(p=>p.id===r.payment_id));
 
-  // A payment is "live" (active) only if it is pending or confirmed BUT the call has NOT been fully completed/released
-  // "completed" status means both host and watcher confirmed — move to history
   const liveReqs = myPay.filter(p => {
     if (p.status === "pending" || p.status === "confirmed") {
-      // Check if there is a completed call_confirmation for this payment
       const conf = (callConfirmations || []).find(cc => cc.payment_id === p.id);
       if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return false;
-      // Also move out if payment status is "completed"
       if (p.status === "completed") return false;
       return true;
     }
     return false;
   });
 
-  // Previous requests: completed, refunded, or call confirmation confirmed
   const closedReqs = myPay.filter(p => {
     if (p.status === "completed" || p.status === "refunded" || p.status === "refunded_partial") return true;
     const conf = (callConfirmations || []).find(cc => cc.payment_id === p.id);
@@ -1408,7 +1451,6 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
             {myPay.filter(p=>p.status!=="poke"&&p.status!=="pending_init"&&p.status!=="failed").length===0
               ? <div style={{ color:c.sub, textAlign:"center", padding:"50px 0" }}>No requests yet.</div>
               : <>
-                {/* LIVE requests — pending or confirmed but call not yet completed */}
                 {liveReqs.length > 0 ? (
                   <div style={{ marginBottom:20 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
@@ -1435,24 +1477,22 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
                             <div style={{ padding:"10px", borderRadius:8, background:`${c.green}10`, border:`1px solid ${c.green}30` }}>
                               <div style={{ fontSize:12, fontWeight:600, color:c.green, marginBottom:4 }}>✓ Confirmed — Contacts Revealed</div>
                               {(() => {
-  const number = pay.watcher_contact || "";
-  const platform = pay.watcher_platform || "WhatsApp";
-  const digits = number.replace(/\D/g, "");
-  const intl = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
-  const link = platform === "Telegram"
-    ? `https://t.me/+${intl}`
-    : `https://wa.me/${intl}`;
-  return (
-    <a href={link} target="_blank" rel="noopener noreferrer"
-      style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"10px 16px", borderRadius:10, background:platform==="Telegram"?`#0088cc22`:`#25D36622`, border:`1px solid ${platform==="Telegram"?"#0088cc":"#25D366"}`, textDecoration:"none", marginTop:6 }}>
-      <span style={{ fontSize:20 }}>{platform==="Telegram"?"✈️":"💬"}</span>
-      <div>
-        <div style={{ fontFamily:"'DM Mono',monospace", fontSize:15, color:platform==="Telegram"?"#0088cc":"#25D366", fontWeight:700 }}>{number}</div>
-        <div style={{ fontSize:11, color:c.sub }}>Tap to call on {platform}</div>
-      </div>
-    </a>
-  );
-})()}
+                                const number = pay.watcher_contact || "";
+                                const platform = pay.watcher_platform || "WhatsApp";
+                                const digits = number.replace(/\D/g, "");
+                                const intl = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
+                                const link = platform === "Telegram" ? `https://t.me/+${intl}` : `https://wa.me/${intl}`;
+                                return (
+                                  <a href={link} target="_blank" rel="noopener noreferrer"
+                                    style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"10px 16px", borderRadius:10, background:platform==="Telegram"?`#0088cc22`:`#25D36622`, border:`1px solid ${platform==="Telegram"?"#0088cc":"#25D366"}`, textDecoration:"none", marginTop:6 }}>
+                                    <span style={{ fontSize:20 }}>{platform==="Telegram"?"✈️":"💬"}</span>
+                                    <div>
+                                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:15, color:platform==="Telegram"?"#0088cc":"#25D366", fontWeight:700 }}>{number}</div>
+                                      <div style={{ fontSize:11, color:c.sub }}>Tap to call on {platform}</div>
+                                    </div>
+                                  </a>
+                                );
+                              })()}
                             </div>
                           )}
                           {conf && conf.status === "pending" && (
@@ -1473,7 +1513,6 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
                   </div>
                 )}
 
-                {/* PREVIOUS REQUESTS folder */}
                 {closedReqs.length > 0 && (
                   <div style={{ background:c.card, border:`1px solid ${c.border}`, borderRadius:14, overflow:"hidden" }}>
                     <div onClick={()=>setHostHistoryOpen(o=>!o)} style={{ padding:"14px 18px", display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer" }}
@@ -1595,35 +1634,45 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
   );
 }
 
-function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav }) {
+function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav, currentUser }) {
   const [showFullBio, setShowFullBio] = useState(false);
   const photos = [u.profilePhoto, ...safeArr(u.photos)].filter(Boolean);
   const [idx, setIdx] = useState(0);
+  // CHANGE 3: blur for non-logged-in on browse page too
+  const isBlurred = !currentUser;
   
   return (
     <div className="fi" style={{ background: `linear-gradient(180deg, ${c.card}, #1a1a24)`, border: `1px solid ${c.border}`, borderRadius: 18, overflow: "hidden", cursor: "pointer", transition: "all .3s", position: "relative" }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = c.gold; e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = `0 20px 50px ${c.gold}10`; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
       
-      <button onClick={(e) => { e.stopPropagation(); onFavorite(u.id); }}
-        style={{ position: "absolute", top: 12, right: 12, zIndex: 10, background: "#0a0a0fcc", border: "none", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, backdropFilter: "blur(4px)", color: isFav ? c.gold : c.sub, transition: "all .2s" }}
-        onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
-        onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}>
-        {isFav ? "❤️" : "♡"}
-      </button>
+      {currentUser && (
+        <button onClick={(e) => { e.stopPropagation(); onFavorite(u.id); }}
+          style={{ position: "absolute", top: 12, right: 12, zIndex: 10, background: "#0a0a0fcc", border: "none", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, backdropFilter: "blur(4px)", color: isFav ? c.gold : c.sub, transition: "all .2s" }}
+          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
+          onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}>
+          {isFav ? "❤️" : "♡"}
+        </button>
+      )}
 
       <div style={{ position: "relative", width: "100%", aspectRatio: "1/1", overflow: "hidden" }}>
         {photos.length > 0 ? (
-          <img src={photos[idx]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={photos[idx]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: isBlurred ? "blur(10px) brightness(0.7)" : "none", transform: isBlurred ? "scale(1.05)" : "none", transition: "filter .3s" }} />
         ) : (
           <div style={{ width: "100%", height: "100%", background: `linear-gradient(135deg, ${c.goldD}, #1a1a2e)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Cormorant Garamond',serif", fontSize: 64, color: c.gold, opacity: .3 }}>{u.avatar}</div>
+        )}
+        {isBlurred && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, zIndex: 3 }}>
+            <div style={{ fontSize: 28 }}>🔐</div>
+            <div style={{ color: "#fff", fontWeight: 600, fontSize: 13, textAlign: "center", lineHeight: 1.4 }}>Sign up to<br/>view profile</div>
+          </div>
         )}
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 50, background: "linear-gradient(to top,#0a0a0fcc,transparent)" }} />
         <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "center", gap: 6, background: "#0a0a0f99", padding: "3px 8px", borderRadius: 20, zIndex: 2 }}>
           <OnlineDot on={u.online} />
           <span style={{ fontSize: 10, color: u.online ? c.green : c.dim }}>{u.online ? "Live" : "Offline"}</span>
         </div>
-        {photos.length > 1 && (
+        {!isBlurred && photos.length > 1 && (
           <>
             <button onClick={e => { e.stopPropagation(); setIdx(p => (p - 1 + photos.length) % photos.length); }}
               style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "#0a0a0faa", border: "none", color: c.text, width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 18, zIndex: 2 }}>‹</button>
@@ -1642,21 +1691,32 @@ function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav }) {
       <div style={{ padding: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <div style={{ fontWeight: 600, fontSize: 16 }}>{u.name}</div>
-          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL, fontWeight: 600 }}>{S}{u.rate}</div>
+          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: isBlurred ? c.sub : c.goldL, fontWeight: 600 }}>
+            {isBlurred ? "₵ ••" : `${S}${u.rate}`}
+          </div>
         </div>
-        <HostRating hostId={u.id} />
+        {!isBlurred && <HostRating hostId={u.id} />}
         <div style={{ color: c.sub, fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
-          {showFullBio ? u.bio : `${(u.bio || "").slice(0, 80)}${(u.bio || "").length > 80 ? "…" : ""}`}
-          {(u.bio || "").length > 80 && (
-            <span onClick={(e) => { e.stopPropagation(); setShowFullBio(!showFullBio); }}
-              style={{ color: c.gold, cursor: "pointer", marginLeft: 5, fontSize: 11 }}>
-              {showFullBio ? "show less" : "more"}
-            </span>
+          {isBlurred ? "Sign up to see full profile" : (
+            <>
+              {showFullBio ? u.bio : `${(u.bio || "").slice(0, 80)}${(u.bio || "").length > 80 ? "…" : ""}`}
+              {(u.bio || "").length > 80 && (
+                <span onClick={(e) => { e.stopPropagation(); setShowFullBio(!showFullBio); }}
+                  style={{ color: c.gold, cursor: "pointer", marginLeft: 5, fontSize: 11 }}>
+                  {showFullBio ? "show less" : "more"}
+                </span>
+              )}
+            </>
           )}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
-          {safeArr(u.tags).slice(0, 3).map(t => <Chip key={t} label={t} color={c.goldD} />)}
-          {safeArr(u.tags).length > 3 && <Chip label={`+${safeArr(u.tags).length - 3}`} color={c.sub} />}
+          {isBlurred
+            ? [1,2,3].map(i => <Chip key={i} label="••••" />)
+            : <>
+                {safeArr(u.tags).slice(0, 3).map(t => <Chip key={t} label={t} color={c.goldD} />)}
+                {safeArr(u.tags).length > 3 && <Chip label={`+${safeArr(u.tags).length - 3}`} color={c.sub} />}
+              </>
+          }
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1664,11 +1724,15 @@ function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav }) {
             <span style={{ fontSize: 12, fontWeight: 500 }}>{u.platform || "WhatsApp"}</span>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={(e) => { e.stopPropagation(); onReport(u); }}
-              style={{ background: "none", border: "none", color: c.dim, fontSize: 12, cursor: "pointer", padding: "4px 8px", borderRadius: 6, transition: "all .2s" }}
-              onMouseEnter={e => e.currentTarget.style.color = c.red}
-              onMouseLeave={e => e.currentTarget.style.color = c.dim}>⚠️</button>
-            <Btn small onClick={(e) => { e.stopPropagation(); onConnect(u); }} style={{ padding: "6px 14px" }}>Connect →</Btn>
+            {!isBlurred && (
+              <button onClick={(e) => { e.stopPropagation(); onReport(u); }}
+                style={{ background: "none", border: "none", color: c.dim, fontSize: 12, cursor: "pointer", padding: "4px 8px", borderRadius: 6, transition: "all .2s" }}
+                onMouseEnter={e => e.currentTarget.style.color = c.red}
+                onMouseLeave={e => e.currentTarget.style.color = c.dim}>⚠️</button>
+            )}
+            <Btn small onClick={(e) => { e.stopPropagation(); onConnect(u); }} style={{ padding: "6px 14px" }}>
+              {isBlurred ? "Sign Up →" : "Connect →"}
+            </Btn>
           </div>
         </div>
       </div>
@@ -1838,6 +1902,15 @@ function BrowseView({ users, payments, onInitiatePayment, currentUser, toast, ve
       <div style={{ maxWidth:1100, margin:"0 auto", padding:"36px 24px" }}>
         <div style={{ fontFamily:"'Playfair Display',serif", fontSize:36, fontWeight:300, marginBottom:6 }}>Find Your Consultant</div>
 
+        {!currentUser && (
+          <div style={{ background:`${c.gold}15`, border:`1px solid ${c.gold}40`, borderRadius:12, padding:"12px 18px", marginBottom:18, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+            <span style={{ fontSize:18 }}>🔐</span>
+            <span style={{ color:c.sub, fontSize:13, flex:1 }}>Sign up to see full profiles, photos, and rates</span>
+            <Btn small onClick={()=>setView("signup")}>Sign Up Free →</Btn>
+            <Btn small variant="ghost" onClick={()=>setView("login")}>Sign In</Btn>
+          </div>
+        )}
+
         <div style={{ marginBottom:14 }}>
           <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
             placeholder="Search by name or expertise…" 
@@ -1883,6 +1956,7 @@ function BrowseView({ users, payments, onInitiatePayment, currentUser, toast, ve
                   <HostCard key={u.id} u={u} onConnect={handleConnect} setGallery={setGallery}
                     onReport={handleReport}
                     onFavorite={toggleFavorite}
+                    currentUser={currentUser}
                     isFav={favorites.some(f => f.host_id === u.id && f.watcher_id === currentUser?.id)} />
                 ))}
               </div>
@@ -1991,7 +2065,8 @@ function BrowseView({ users, payments, onInitiatePayment, currentUser, toast, ve
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  WATCHER DASHBOARD VIEW
+//  WATCHER DASHBOARD — Changes: no total spend, early refund,
+//  dispute outcome notification, collapse resolved to history
 // ═══════════════════════════════════════════════════════════════
 function WatcherDashboardView({ user, users, payments, refundReqs, onRefundRequest, toast, setView, callConfirmations, onConfirmCall, favorites, toggleFavorite }) {
   const myPayments = payments.filter(p =>
@@ -2001,29 +2076,25 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
 
   const myPaymentIds = new Set(myPayments.map(p => p.id));
 
-  // A call is "live" only when:
-  // - payment is pending or confirmed
-  // - AND there is no completed call_confirmation for this payment
   const livePayments = myPayments.filter(p => {
     if (p.status !== "pending" && p.status !== "confirmed") return false;
     const conf = (callConfirmations||[]).find(cc => cc.payment_id === p.id);
     if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return false;
     const myRefund = refundReqs.find(r => r.payment_id === p.id);
-    if (myRefund && myRefund.status === "denied") return false;
+    if (myRefund && (myRefund.status === "denied" || myRefund.status === "approved")) return false;
     return true;
   });
 
-  // Previous calls: completed, refunded, or call confirmation is done
   const previousPayments = myPayments.filter(p => {
     if (p.status === "completed" || p.status === "refunded" || p.status === "refunded_partial") return true;
     const conf = (callConfirmations||[]).find(cc => cc.payment_id === p.id);
     if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return true;
     const myRefund = refundReqs.find(r => r.payment_id === p.id);
-    if (myRefund && myRefund.status === "denied") return true;
+    // CHANGE 4: approved OR denied refunds collapse to history
+    if (myRefund && (myRefund.status === "approved" || myRefund.status === "denied")) return true;
     return false;
   });
 
-  // Pending call confirmation for this watcher (host marked done, watcher hasn't confirmed yet)
   const pendingConfirmation = (callConfirmations||[]).find(c =>
     c.status === "pending" && myPaymentIds.has(c.payment_id)
   );
@@ -2039,13 +2110,38 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
     }
   }, [user?.id]);
 
+  // CHANGE 4: Check for newly resolved refunds to notify watcher
+  const resolvedRefunds = refundReqs.filter(r =>
+    myPaymentIds.has(r.payment_id) &&
+    (r.status === "approved" || r.status === "denied") &&
+    !localStorage.getItem(`notified_refund_${r.id}`)
+  );
+
+  useEffect(() => {
+    resolvedRefunds.forEach(r => {
+      if (r.status === "approved") {
+        toast(`✅ Your refund for ${S}${r.refund_amount || ""} was approved — funds returned to you`, "success");
+      } else if (r.status === "denied") {
+        toast(`❌ Your refund request was denied by admin`, "error");
+      }
+      localStorage.setItem(`notified_refund_${r.id}`, "1");
+    });
+  }, [refundReqs]);
+
   const PaymentCard = ({ p, isLive }) => {
     const host = users.find(u => u.id===(p.target_user_id||p.targetUserId));
     const myRefund = refundReqs.find(r => r.payment_id===p.id);
     const myConf = (callConfirmations||[]).find(c => c.payment_id===p.id);
-    const canCancel = p.status==="pending" && !myConf && !myRefund;
-    const canDispute = p.status==="confirmed" && !myRefund && !(myConf?.status==="confirmed"||myConf?.status==="auto_confirmed");
     const isDone = p.status==="completed" || myConf?.status==="confirmed" || myConf?.status==="auto_confirmed";
+
+    // CHANGE 2: Early refund — show if contact revealed and no refund yet and no confirmation pending
+    // Watcher can request refund if host contact revealed but they haven't been contacted in time
+    const canEarlyRefund = p.status==="confirmed"
+      && !myRefund
+      && !(myConf?.status==="confirmed" || myConf?.status==="auto_confirmed")
+      && !isDone;
+
+    const canCancel = p.status==="pending" && !myConf && !myRefund;
 
     return (
       <div style={{
@@ -2053,6 +2149,7 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
         border:`1px solid ${
           isDone?c.green:
           p.status==="refunded"||p.status==="refunded_partial"?c.red:
+          myRefund?.status==="denied"?c.red:
           p.status==="confirmed"?c.gold:c.border
         }`,
         overflow:"hidden", marginBottom: isLive ? 0 : 10
@@ -2072,7 +2169,8 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
                 isDone?c.green:
                 p.status==="pending"?"#facc15":
                 p.status==="confirmed"?c.gold:
-                p.status==="refunded"||p.status==="refunded_partial"?c.red:c.sub
+                p.status==="refunded"||p.status==="refunded_partial"?c.red:
+                myRefund?.status==="denied"?c.red:c.sub
               }}>
                 {isDone?"✅ Call complete":
                  p.status==="pending"?"🟡 Awaiting confirmation":
@@ -2083,40 +2181,35 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
             </div>
           </div>
 
-          {/* Pending state */}
           {p.status==="pending" && !isDone && (
             <div style={{ padding:"10px 14px", borderRadius:8, background:c.surface, border:`1px solid ${c.border}`, fontSize:12, color:c.sub }}>
               🔒 Waiting for payment to be confirmed. Contact will be revealed automatically.
             </div>
           )}
 
-          {/* Contact revealed */}
           {(p.status==="confirmed" || isDone) && p.host_contact_revealed && (
             <div style={{ padding:"10px 14px", borderRadius:8, background:`${c.green}10`, border:`1px solid ${c.green}30`, marginBottom:10 }}>
               <div style={{ fontSize:11, color:c.green, marginBottom:3 }}>✓ Host Contact</div>
               {(() => {
-  const number = p.host_contact_revealed || "";
-  const platform = p.host_platform_revealed || "WhatsApp";
-  const digits = number.replace(/\D/g, "");
-  const intl = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
-  const link = platform === "Telegram"
-    ? `https://t.me/+${intl}`
-    : `https://wa.me/${intl}`;
-  return (
-    <a href={link} target="_blank" rel="noopener noreferrer"
-      style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"10px 16px", borderRadius:10, background:platform==="Telegram"?`#0088cc22`:`#25D36622`, border:`1px solid ${platform==="Telegram"?"#0088cc":"#25D366"}`, textDecoration:"none", marginTop:6 }}>
-      <span style={{ fontSize:20 }}>{platform==="Telegram"?"✈️":"💬"}</span>
-      <div>
-        <div style={{ fontFamily:"'DM Mono',monospace", fontSize:15, color:platform==="Telegram"?"#0088cc":"#25D366", fontWeight:700 }}>{number}</div>
-        <div style={{ fontSize:11, color:c.sub }}>Tap to call on {platform}</div>
-      </div>
-    </a>
-  );
-})()}
+                const number = p.host_contact_revealed || "";
+                const platform = p.host_platform_revealed || "WhatsApp";
+                const digits = number.replace(/\D/g, "");
+                const intl = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
+                const link = platform === "Telegram" ? `https://t.me/+${intl}` : `https://wa.me/${intl}`;
+                return (
+                  <a href={link} target="_blank" rel="noopener noreferrer"
+                    style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"10px 16px", borderRadius:10, background:platform==="Telegram"?`#0088cc22`:`#25D36622`, border:`1px solid ${platform==="Telegram"?"#0088cc":"#25D366"}`, textDecoration:"none", marginTop:6 }}>
+                    <span style={{ fontSize:20 }}>{platform==="Telegram"?"✈️":"💬"}</span>
+                    <div>
+                      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:15, color:platform==="Telegram"?"#0088cc":"#25D366", fontWeight:700 }}>{number}</div>
+                      <div style={{ fontSize:11, color:c.sub }}>Tap to call on {platform}</div>
+                    </div>
+                  </a>
+                );
+              })()}
             </div>
           )}
 
-          {/* Completed */}
           {isDone && (
             <div style={{ marginBottom:10 }}>
               <div style={{ padding:"10px 14px", borderRadius:8, background:`${c.green}10`, marginBottom:8 }}>
@@ -2142,28 +2235,33 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
             </div>
           )}
 
-          {/* Refund status */}
+          {/* Refund status notification */}
           {myRefund && (
-            <div style={{ padding:"8px 12px", borderRadius:8, background:`${c.orange}10`, marginBottom:10 }}>
+            <div style={{ padding:"8px 12px", borderRadius:8, marginBottom:10, background:
+              myRefund.status==="approved"?`${c.green}10`:
+              myRefund.status==="denied"?`${c.red}10`:`${c.orange}10`
+            }}>
               {myRefund.status==="pending"||myRefund.status==="pending_host"
-                ? <span style={{ color:c.orange, fontSize:12 }}>⏳ Refund under review</span>
+                ? <span style={{ color:c.orange, fontSize:12 }}>⏳ Refund under review by admin</span>
                 : myRefund.status==="approved"
-                  ? <span style={{ color:c.green, fontSize:12 }}>✅ Refunded successfully</span>
-                  : <span style={{ color:c.red, fontSize:12 }}>❌ Refund denied</span>}
+                  ? <span style={{ color:c.green, fontSize:12 }}>✅ Refund approved — funds returned to you</span>
+                  : <span style={{ color:c.red, fontSize:12 }}>❌ Refund request denied by admin</span>}
             </div>
           )}
 
           {/* Actions — only on live cards */}
           {isLive && (
             <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {/* Cancel before contact revealed */}
               {canCancel && (
-                <Btn small variant="orange" onClick={()=>onRefundRequest(p.id,"Cancelling request")}>
+                <Btn small variant="orange" onClick={()=>onRefundRequest(p.id,"Cancelling request before contact revealed")}>
                   ✕ Cancel (get 70% back)
                 </Btn>
               )}
-              {canDispute && (
-                <Btn small variant="surface" onClick={()=>onRefundRequest(p.id,"Call did not take place")}>
-                  ↩ Dispute / Refund
+              {/* CHANGE 2: Early refund — contact revealed but host hasn't contacted watcher */}
+              {canEarlyRefund && (
+                <Btn small variant="surface" onClick={()=>onRefundRequest(p.id,"Host contact revealed but host did not reach out in time")}>
+                  ↩ Host didn't contact me
                 </Btn>
               )}
             </div>
@@ -2178,12 +2276,11 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
       <div style={{ fontFamily:"'Playfair Display',serif", fontSize:32, marginBottom:4 }}>My Dashboard</div>
       <div style={{ color:c.sub, fontSize:13, marginBottom:24 }}>Welcome back, {user?.name?.split(" ")[0]} ✦</div>
 
-      {/* Stats */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:28 }}>
+      {/* CHANGE 1 (Remove total spend): Stats — only calls booked and refunds, no total spend */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:12, marginBottom:28 }}>
         {[
-          ["Total Spent", `${S}${myPayments.reduce((a,p)=>a+Number(p.total_charged||p.amount),0).toFixed(2)}`, c.goldL],
           ["Calls Booked", myPayments.length, c.blue],
-          ["Refunded", refundReqs.filter(r=>r.status==="approved"&&r.watcher_id===user?.id).length, c.orange],
+          ["Refunds", refundReqs.filter(r=>r.status==="approved"&&(r.watcher_id===user?.id||myPaymentIds.has(r.payment_id))).length, c.orange],
         ].map(([l,v,col])=>(
           <div key={l} style={{ background:c.card, border:`1px solid ${c.border}`, borderRadius:14, padding:18, textAlign:"center" }}>
             <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:"clamp(20px,5vw,28px)", fontWeight:600, color:col }}>{v}</div>
@@ -2241,7 +2338,6 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
         </div>
       ) : (
         <>
-          {/* LIVE REQUEST SECTION */}
           {livePayments.length > 0 ? (
             <div style={{ marginBottom:24 }}>
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
@@ -2258,7 +2354,7 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
             </div>
           )}
 
-          {/* PREVIOUS CALLS FOLDER */}
+          {/* CHANGE 4: Previous Calls folder — collapses resolved refunds too */}
           {previousPayments.length > 0 && (
             <div style={{ background:c.card, border:`1px solid ${c.border}`, borderRadius:14, overflow:"hidden" }}>
               <div onClick={()=>setHistoryOpen(o=>!o)} style={{ padding:"14px 18px", display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer" }}
@@ -2589,93 +2685,72 @@ function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, r
         )}
 
         {tab==="refunds" && (
-  <div>
-    <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, marginBottom:18 }}>Refund Requests</div>
-    {refundReqs.length===0 && (
-      <div style={{ color:c.sub, textAlign:"center", padding:"40px 0" }}>No refund requests.</div>
-    )}
-    {refundReqs.map(r=>{
-      const pay = payments.find(p=>p.id===r.payment_id);
-      const host = users.find(u=>u.id===pay?.target_user_id);
-      const isDispute = r.reason?.toLowerCase().includes("call did not") || r.reason?.toLowerCase().includes("dispute") || r.refund_type==="dispute";
-      const isPending = r.status==="pending" || r.status==="pending_host";
-      const isApproved = r.status==="approved";
-      const isDenied = r.status==="denied";
-      return (
-        <div key={r.id} style={{
-          background:c.card,
-          border:`1px solid ${isDispute?c.red:isPending?c.orange:isApproved?c.green:c.border}`,
-          borderRadius:14, padding:20, marginBottom:12
-        }}>
-          {/* Header */}
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:10, marginBottom:10 }}>
-            <div>
-              {isDispute && (
-                <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:`${c.red}15`, border:`1px solid ${c.red}40`, borderRadius:20, padding:"3px 10px", marginBottom:8 }}>
-                  <span style={{ fontSize:12 }}>⚠️</span>
-                  <span style={{ fontSize:11, fontWeight:700, color:c.red, letterSpacing:.5 }}>DISPUTED CALL</span>
+          <div>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, marginBottom:18 }}>Refund Requests</div>
+            {refundReqs.length===0 && (
+              <div style={{ color:c.sub, textAlign:"center", padding:"40px 0" }}>No refund requests.</div>
+            )}
+            {refundReqs.map(r=>{
+              const pay = payments.find(p=>p.id===r.payment_id);
+              const host = users.find(u=>u.id===pay?.target_user_id);
+              const isDispute = r.reason?.toLowerCase().includes("call did not") || r.reason?.toLowerCase().includes("dispute") || r.refund_type==="dispute";
+              const isPending = r.status==="pending" || r.status==="pending_host";
+              const isApproved = r.status==="approved";
+              const isDenied = r.status==="denied";
+              return (
+                <div key={r.id} style={{
+                  background:c.card,
+                  border:`1px solid ${isDispute?c.red:isPending?c.orange:isApproved?c.green:c.border}`,
+                  borderRadius:14, padding:20, marginBottom:12
+                }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:10, marginBottom:10 }}>
+                    <div>
+                      {isDispute && (
+                        <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:`${c.red}15`, border:`1px solid ${c.red}40`, borderRadius:20, padding:"3px 10px", marginBottom:8 }}>
+                          <span style={{ fontSize:12 }}>⚠️</span>
+                          <span style={{ fontSize:11, fontWeight:700, color:c.red, letterSpacing:.5 }}>DISPUTED CALL</span>
+                        </div>
+                      )}
+                      <div style={{ fontWeight:600, fontSize:15 }}>
+                        {r.watcher_name} → {host?.name||"Host"}
+                      </div>
+                      <div style={{ fontSize:12, color:c.sub, marginTop:2 }}>
+                        {r.refund_type||"Manual"} · {new Date(r.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:c.goldL, fontWeight:600 }}>
+                        {S}{r.refund_amount||pay?.total_charged||0}
+                      </div>
+                      <div style={{ fontSize:11, fontWeight:700, marginTop:4, color:isPending?c.orange:isApproved?c.green:isDenied?c.red:c.sub }}>
+                        {isPending?"⏳ Awaiting Review":isApproved?"✅ Refund Approved":isDenied?"❌ Denied":"—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ padding:"10px 14px", background:isDispute?`${c.red}10`:c.surface, border:`1px solid ${isDispute?c.red+"30":c.border}`, borderRadius:8, marginBottom:12, fontSize:13, color:isDispute?c.text:c.sub }}>
+                    {isDispute && <span style={{ fontWeight:600, color:c.red }}>Watcher says: </span>}
+                    {r.reason}
+                  </div>
+                  {pay && (
+                    <div style={{ display:"flex", gap:16, flexWrap:"wrap", fontSize:12, color:c.sub, marginBottom:12, padding:"8px 12px", background:c.surface, borderRadius:8 }}>
+                      <span>Payment: <strong style={{ color:c.text }}>{S}{pay.total_charged||pay.amount}</strong></span>
+                      <span>Status: <strong style={{ color:c.text }}>{pay.status}</strong></span>
+                      <span>Ref: <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>{pay.paystack_ref}</span></span>
+                    </div>
+                  )}
+                  {isPending && (
+                    <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                      <Btn small variant="green" onClick={()=>onApproveRefund(r.id)}>✅ Approve & Refund</Btn>
+                      <Btn small variant="red" onClick={()=>onDenyRefund(r.id)}>❌ Deny Refund</Btn>
+                    </div>
+                  )}
+                  {isApproved && <div style={{ fontSize:12, color:c.green, fontWeight:600 }}>💸 Refund processed — funds returned to watcher</div>}
+                  {isDenied && <div style={{ fontSize:12, color:c.red }}>❌ Refund denied — payment remains with host</div>}
                 </div>
-              )}
-              <div style={{ fontWeight:600, fontSize:15 }}>
-                {r.watcher_name} → {host?.name||"Host"}
-              </div>
-              <div style={{ fontSize:12, color:c.sub, marginTop:2 }}>
-                {r.refund_type||"Manual"} · {new Date(r.created_at).toLocaleString()}
-              </div>
-            </div>
-            <div style={{ textAlign:"right" }}>
-              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:c.goldL, fontWeight:600 }}>
-                {S}{r.refund_amount||pay?.total_charged||0}
-              </div>
-              <div style={{ fontSize:11, fontWeight:700, marginTop:4, color:isPending?c.orange:isApproved?c.green:isDenied?c.red:c.sub }}>
-                {isPending?"⏳ Awaiting Review":isApproved?"✅ Refund Approved":isDenied?"❌ Denied":"—"}
-              </div>
-            </div>
+              );
+            })}
           </div>
-
-          {/* Reason */}
-          <div style={{ padding:"10px 14px", background:isDispute?`${c.red}10`:c.surface, border:`1px solid ${isDispute?c.red+"30":c.border}`, borderRadius:8, marginBottom:12, fontSize:13, color:isDispute?c.text:c.sub }}>
-            {isDispute && <span style={{ fontWeight:600, color:c.red }}>Watcher says: </span>}
-            {r.reason}
-          </div>
-
-          {/* Payment details */}
-          {pay && (
-            <div style={{ display:"flex", gap:16, flexWrap:"wrap", fontSize:12, color:c.sub, marginBottom:12, padding:"8px 12px", background:c.surface, borderRadius:8 }}>
-              <span>Payment: <strong style={{ color:c.text }}>{S}{pay.total_charged||pay.amount}</strong></span>
-              <span>Status: <strong style={{ color:c.text }}>{pay.status}</strong></span>
-              <span>Ref: <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>{pay.paystack_ref}</span></span>
-            </div>
-          )}
-
-          {/* Actions */}
-          {isPending && (
-            <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-              <Btn small variant="green" onClick={()=>onApproveRefund(r.id)}>
-                ✅ Approve & Refund
-              </Btn>
-              <Btn small variant="red" onClick={()=>onDenyRefund(r.id)}>
-                ❌ Deny Refund
-              </Btn>
-            </div>
-          )}
-
-          {isApproved && (
-            <div style={{ fontSize:12, color:c.green, fontWeight:600 }}>
-              💸 Refund processed — funds returned to watcher
-            </div>
-          )}
-
-          {isDenied && (
-            <div style={{ fontSize:12, color:c.red }}>
-              ❌ Refund denied — payment remains with host
-            </div>
-          )}
-        </div>
-      );
-    })}
-  </div>
-)}
+        )}
 
         {tab==="reports" && (
           <div>
@@ -2713,13 +2788,13 @@ function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, r
                     <div style={{ padding:"10px 14px", background:c.surface, borderRadius:8, marginBottom:12, fontSize:13, color:c.sub }}>{r.details}</div>
                   )}
                   <div style={{ fontSize:12, fontWeight:600 }}>
-  {r.refund_type==="dispute" || r.reason?.toLowerCase().includes("dispute") || r.reason?.toLowerCase().includes("call did not")
-    ? <span style={{ color:c.red }}>⚠️ Disputed — watcher says call didn't happen</span>
-    : null}
-  <span style={{ color:r.status==="pending"||r.status==="pending_host"?c.orange:r.status==="approved"?c.green:c.red, marginLeft:4 }}>
-    {r.status==="pending"||r.status==="pending_host"?"⏳ Awaiting review":r.status==="approved"?"✅ Approved":"❌ Denied"}
-  </span>
-</div>
+                    {r.refund_type==="dispute" || r.reason?.toLowerCase().includes("dispute") || r.reason?.toLowerCase().includes("call did not")
+                      ? <span style={{ color:c.red }}>⚠️ Disputed — watcher says call didn't happen</span>
+                      : null}
+                    <span style={{ color:r.status==="pending"||r.status==="pending_host"?c.orange:r.status==="approved"?c.green:c.red, marginLeft:4 }}>
+                      {r.status==="pending"||r.status==="pending_host"?"⏳ Awaiting review":r.status==="approved"?"✅ Approved":"❌ Denied"}
+                    </span>
+                  </div>
                 </div>
               );
             })}
@@ -2791,6 +2866,7 @@ function ProfileView({ host, setView, currentUser, onInitiatePayment, toast }) {
   const [showPay, setShowPay] = useState(false);
   const allPhotos = [host.profilePhoto, ...safeArr(host.photos)].filter(Boolean);
   const [idx, setIdx] = useState(0);
+  const isBlurred = !currentUser;
   const FEE_PCT = 20;
   const feePreview = parseFloat((host.rate * FEE_PCT / 100).toFixed(2));
   const totalPreview = host.rate + feePreview;
@@ -2808,15 +2884,22 @@ function ProfileView({ host, setView, currentUser, onInitiatePayment, toast }) {
       <button onClick={()=>setView('browse')} style={{ background:'none', border:'none', color:c.gold, cursor:'pointer', marginBottom:20, fontSize:13 }}>← Back to Browse</button>
       <div style={{ position:'relative', width:'100%', aspectRatio:'4/3', borderRadius:16, overflow:'hidden', marginBottom:20, background:c.surface }}>
         {allPhotos.length > 0
-          ? <img src={allPhotos[idx]} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+          ? <img src={allPhotos[idx]} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', filter:isBlurred?"blur(12px) brightness(0.6)":"none", transform:isBlurred?"scale(1.05)":"none" }} />
           : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Cormorant Garamond',serif", fontSize:72, color:c.gold, opacity:.3 }}>{host.avatar}</div>
         }
+        {isBlurred && (
+          <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10, zIndex:3 }}>
+            <div style={{ fontSize:36 }}>🔐</div>
+            <div style={{ color:'#fff', fontWeight:600, fontSize:15, textAlign:'center', lineHeight:1.5 }}>Sign up to view<br/>full profile</div>
+            <Btn small onClick={()=>setView('signup')} style={{ marginTop:4 }}>Sign Up Free →</Btn>
+          </div>
+        )}
         <div style={{ position:'absolute', bottom:0, left:0, right:0, height:80, background:'linear-gradient(to top,#000000cc,transparent)' }} />
         <div style={{ position:'absolute', top:12, right:12, display:'flex', alignItems:'center', gap:5, background:'#0a0a0f99', padding:'4px 10px', borderRadius:20 }}>
           <OnlineDot on={host.online} />
           <span style={{ fontSize:11, color:host.online?c.green:c.dim }}>{host.online?'Live':'Offline'}</span>
         </div>
-        {allPhotos.length > 1 && (
+        {!isBlurred && allPhotos.length > 1 && (
           <>
             <button onClick={()=>setIdx(p=>(p-1+allPhotos.length)%allPhotos.length)} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', background:'#0a0a0faa', border:'none', color:c.text, width:32, height:32, borderRadius:'50%', cursor:'pointer', fontSize:18 }}>‹</button>
             <button onClick={()=>setIdx(p=>(p+1)%allPhotos.length)} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'#0a0a0faa', border:'none', color:c.text, width:32, height:32, borderRadius:'50%', cursor:'pointer', fontSize:18 }}>›</button>
@@ -2825,33 +2908,46 @@ function ProfileView({ host, setView, currentUser, onInitiatePayment, toast }) {
       </div>
       <div style={{ marginBottom:24 }}>
         <div style={{ fontFamily:"'Playfair Display',serif", fontSize:32, fontWeight:600, marginBottom:4 }}>{host.name}</div>
-        <div style={{ color:c.sub, fontSize:14, marginBottom:12 }}>{host.bio}</div>
-        <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>{safeArr(host.tags).map(t=><Chip key={t} label={t}/>)}</div>
+        <div style={{ color:c.sub, fontSize:14, marginBottom:12 }}>{isBlurred ? "Sign up to read full bio" : host.bio}</div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+          {isBlurred ? [1,2,3].map(i=><Chip key={i} label="••••" />) : safeArr(host.tags).map(t=><Chip key={t} label={t}/>)}
+        </div>
         <div style={{ color:c.sub, fontSize:13 }}>via {host.platform}</div>
       </div>
       <div style={{ background:c.card, border:`1px solid ${c.border}`, borderRadius:14, padding:20, marginBottom:20, textAlign:'center' }}>
         <div style={{ color:c.sub, fontSize:12, marginBottom:4 }}>Consultation Fee</div>
-        <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:42, color:c.goldL, fontWeight:600 }}>{S}{host.rate}</div>
+        <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:42, color:isBlurred?c.sub:c.goldL, fontWeight:600 }}>
+          {isBlurred ? "₵ ••" : `${S}${host.rate}`}
+        </div>
         <div style={{ color:c.dim, fontSize:11, marginTop:2 }}>per call via {host.platform}</div>
       </div>
-      <div style={{ display:'flex', gap:10, marginBottom:20 }}>
-        <Btn onClick={()=>setShowPay(!showPay)} style={{ flex:1 }}>{showPay ? 'Cancel' : 'Connect Now ✦'}</Btn>
-        <Btn variant="ghost" onClick={copyLink} small style={{ flex:0 }}>📋 Share</Btn>
-      </div>
-      {showPay && (
-        <div className="fu" style={{ background:c.card, border:`1px solid ${c.border}`, borderRadius:14, padding:20, marginBottom:20 }}>
-          <div style={{ fontWeight:600, marginBottom:14 }}>Enter Your Details</div>
-          <div style={{ background:`${c.gold}12`, borderRadius:10, padding:12, marginBottom:16, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <span style={{ color:c.sub, fontSize:13 }}>Total ({FEE_PCT}% platform fee included)</span>
-            <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:c.goldL, fontWeight:600 }}>{S}{totalPreview.toFixed(2)}</span>
-          </div>
-          <Field label="Your Contact Number" value={watcherContact} onChange={setWatcherContact} type="tel" maxLength={10} placeholder="10-digit number" />
-          <Field label="Platform" value={watcherPlatform} onChange={setWatcherPlatform} options={['WhatsApp','Telegram']} />
-          {!paying
-            ? <Btn onClick={handlePay} full>Pay {S}{totalPreview.toFixed(2)} Securely →</Btn>
-            : <div style={{ textAlign:'center', padding:16 }}><Spinner /></div>
-          }
+      {isBlurred ? (
+        <div style={{ display:'flex', gap:10, marginBottom:20, flexDirection:'column' }}>
+          <Btn onClick={()=>setView('signup')} full>Sign Up to Connect →</Btn>
+          <Btn variant="ghost" onClick={()=>setView('login')} full>Already have an account? Sign In</Btn>
         </div>
+      ) : (
+        <>
+          <div style={{ display:'flex', gap:10, marginBottom:20 }}>
+            <Btn onClick={()=>setShowPay(!showPay)} style={{ flex:1 }}>{showPay ? 'Cancel' : 'Connect Now ✦'}</Btn>
+            <Btn variant="ghost" onClick={copyLink} small style={{ flex:0 }}>📋 Share</Btn>
+          </div>
+          {showPay && (
+            <div className="fu" style={{ background:c.card, border:`1px solid ${c.border}`, borderRadius:14, padding:20, marginBottom:20 }}>
+              <div style={{ fontWeight:600, marginBottom:14 }}>Enter Your Details</div>
+              <div style={{ background:`${c.gold}12`, borderRadius:10, padding:12, marginBottom:16, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ color:c.sub, fontSize:13 }}>Total ({FEE_PCT}% platform fee included)</span>
+                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:c.goldL, fontWeight:600 }}>{S}{totalPreview.toFixed(2)}</span>
+              </div>
+              <Field label="Your Contact Number" value={watcherContact} onChange={setWatcherContact} type="tel" maxLength={10} placeholder="10-digit number" />
+              <Field label="Platform" value={watcherPlatform} onChange={setWatcherPlatform} options={['WhatsApp','Telegram']} />
+              {!paying
+                ? <Btn onClick={handlePay} full>Pay {S}{totalPreview.toFixed(2)} Securely →</Btn>
+                : <div style={{ textAlign:'center', padding:16 }}><Spinner /></div>
+              }
+            </div>
+          )}
+        </>
       )}
     </div>
   );
