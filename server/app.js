@@ -30,10 +30,11 @@ app.use(express.json());
 
 // CORS
 app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-token'],
+  origin: [
+    "http://localhost:5173",
+    "https://connectcall.vercel.app"
+  ],
+  credentials: true
 }));
 
 // Admin login (no auth required)
