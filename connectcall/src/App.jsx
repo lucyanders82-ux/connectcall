@@ -2008,6 +2008,8 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
     if (p.status !== "pending" && p.status !== "confirmed") return false;
     const conf = (callConfirmations||[]).find(cc => cc.payment_id === p.id);
     if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return false;
+    const myRefund = refundReqs.find(r => r.payment_id === p.id);
+    if (myRefund && myRefund.status === "denied") return false;
     return true;
   });
 
@@ -2016,6 +2018,8 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
     if (p.status === "completed" || p.status === "refunded" || p.status === "refunded_partial") return true;
     const conf = (callConfirmations||[]).find(cc => cc.payment_id === p.id);
     if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return true;
+    const myRefund = refundReqs.find(r => r.payment_id === p.id);
+    if (myRefund && myRefund.status === "denied") return true;
     return false;
   });
 
