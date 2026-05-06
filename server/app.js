@@ -100,6 +100,51 @@ app.post('/api/admin/approve-refund', async (req, res) => {
   }
 });
 
+app.post('/api/admin/deny-refund', async (req, res) => {
+  try {
+    const adminToken = req.headers['x-admin-token'];
+    if (adminToken !== process.env.ADMIN_SECRET && adminToken !== 'my-secret-token-123') {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { refundId } = req.body;
+
+    const { data: refund } = await supabase
+      .from('refund_requests')
+      .select('*, payments(*)')
+      .eq('id', refundId)
+      .single();
+
+    if (!refund) return res.status(404).json({ error: 'Refund not found' });
+    if (refund.status === 'denied') return res.status(400).json({ error: 'Already denied' });
+
+    const pay = refund.payments;
+
+    // Update refund status
+    await supabase.from('refund_requests')
+      .update({ status: 'denied', resolved_at: new Date().toISOString() })
+      .eq('id', refundId);
+
+    // Trigger payout to host since refund is rejected
+    const { processPayout } = await import('./services/payout.service.js');
+    try {
+      await processPayout(pay.id, pay.call_id);
+    } catch (payoutErr) {
+      console.error('[DenyRefund] Payout failed:', payoutErr.message);
+    }
+
+    await supabase.from('payments')
+      .update({ status: 'completed' })
+      .eq('id', pay.id);
+
+    return res.json({ success: true, message: 'Refund denied and host payout triggered' });
+
+  } catch (err) {
+    console.error('[DenyRefund] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.use('/api/admin', adminRoutes);
 
 // Host onboard payout

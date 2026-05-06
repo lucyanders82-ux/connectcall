@@ -132,6 +132,15 @@ async function apiConfirmCall(confirmationId, watcherId, response) {
   return res.json();
 }
 
+async function apiDenyRefund(refundId) {
+  const res = await fetch(`${API_BASE}/api/admin/deny-refund`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-token": "my-secret-token-123" },
+    body: JSON.stringify({ refundId }),
+  });
+  return res.json();
+}
+
 async function apiWatcherRefund(paymentId, reason, watcherId) {
   const res = await fetch(`${API_BASE}/api/pay/watcher/refund`, {  // ← add /pay/
     method: "POST",
@@ -918,11 +927,14 @@ export default function App() {
   };
 
   const handleDenyRefund = async (refundId) => {
-    const { error } = await supabase.from("refund_requests").update({ status:"denied" }).eq("id", refundId);
-    if (error) { toast("Error: "+error.message,"error"); return; }
-    setRefundReqs(x=>x.map(r=>r.id===refundId?{...r,status:"denied"}:r));
-    toast("Refund denied", "error");
-  };
+  const result = await apiDenyRefund(refundId);
+  if (result.error) { toast("Error: "+result.error,"error"); return; }
+  const { data: rRows } = await supabase.from("refund_requests").select("*").order("created_at",{ascending:false});
+  if (rRows) setRefundReqs(rRows);
+  const { data: pRows } = await supabase.from("payments").select("*").order("created_at",{ascending:false});
+  if (pRows) setPayments(pRows.map(r=>({ ...r, ts:new Date(r.created_at), targetUserId:r.target_user_id, watcherName:r.watcher_name })));
+  toast("Refund denied — host payout triggered", "error");
+};
 
   const toggleFavorite = async (hostId) => {
     if (!currentUser) return toast("Sign in to save favorites", "error");
@@ -2129,7 +2141,7 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
     // Watcher can request refund if host contact revealed but they haven't been contacted in time
     const canEarlyRefund = p.status==="confirmed"
       && !myRefund
-      && !(myConf?.status==="confirmed" || myConf?.status==="auto_confirmed")
+      && !myConf
       && !isDone;
 
     const canCancel = p.status==="pending" && !myConf && !myRefund;
