@@ -28,6 +28,20 @@ export async function notifyWatcherCallMarkedDone(watcherContact, hostName) {
   }
 }
 
+export async function notifyHostBookingCancelled(hostContact, watcherName) {
+  try {
+    const to = formatGhanaNumber(hostContact);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: ${watcherName} has reported that you did not contact them. Their refund request is under admin review. Please log in for details: connectcall.vercel.app`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Host cancellation notified — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Host cancellation notification failed:', err.message);
+  }
+}
+
 export async function notifyHostNewBooking(hostContact, watcherName, platform) {
   try {
     const to = formatGhanaNumber(hostContact);

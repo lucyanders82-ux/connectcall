@@ -721,6 +721,18 @@ export default function App() {
   }, []);
 
   const handleSignup = async (formData) => {
+    const handleSignup = async (formData) => {
+  // Check duplicate username
+  const nameExists = users.some(u => u.name.toLowerCase() === formData.name.trim().toLowerCase());
+  if (nameExists) { toast("That username is already taken — choose another", "error"); return null; }
+
+  // Check duplicate contact number (hosts only)
+  if (formData.role === "host" && formData.contactNumber) {
+    const contactExists = users.some(u => u.contactNumber === formData.contactNumber.trim());
+    if (contactExists) { toast("That contact number is already registered", "error"); return null; }
+  }
+
+  // rest of existing code...
     let profilePhotoUrl = null;
     if (formData.profilePhoto instanceof File) {
       profilePhotoUrl = await uploadFile("avatars", formData.profilePhoto);
@@ -2139,12 +2151,16 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
 
     // CHANGE 2: Early refund — show if contact revealed and no refund yet and no confirmation pending
     // Watcher can request refund if host contact revealed but they haven't been contacted in time
-    const canEarlyRefund = p.status==="confirmed"
-      && !myRefund
-      && !myConf
-      && !isDone;
-
     const canCancel = p.status==="pending" && !myConf && !myRefund;
+
+// "Host didn't contact me" — only if confirmed, no conf started, not done
+const canEarlyRefund = p.status==="confirmed"
+  && !myRefund
+  && !myConf
+  && !isDone;
+
+// "Dispute" — only after host marks call done (myConf exists and pending)
+const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
 
     return (
       <div style={{
@@ -2254,21 +2270,24 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
 
           {/* Actions — only on live cards */}
           {isLive && (
-            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-              {/* Cancel before contact revealed */}
-              {canCancel && (
-                <Btn small variant="orange" onClick={()=>onRefundRequest(p.id,"Cancelling request before contact revealed")}>
-                  ✕ Cancel (get 70% back)
-                </Btn>
-              )}
-              {/* CHANGE 2: Early refund — contact revealed but host hasn't contacted watcher */}
-              {canEarlyRefund && (
-                <Btn small variant="surface" onClick={()=>onRefundRequest(p.id,"Host contact revealed but host did not reach out in time")}>
-                  ↩ Host didn't contact me
-                </Btn>
-              )}
-            </div>
-          )}
+  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+    {canCancel && (
+      <Btn small variant="orange" onClick={()=>onRefundRequest(p.id,"Cancelling request before contact revealed")}>
+        ✕ Cancel (get 70% back)
+      </Btn>
+    )}
+    {canEarlyRefund && (
+      <Btn small variant="surface" onClick={()=>onRefundRequest(p.id,"Host contact revealed but host did not reach out in time")}>
+        ↩ Host didn't contact me
+      </Btn>
+    )}
+    {canDispute && (
+      <Btn small variant="red" onClick={()=>onRefundRequest(p.id,"Watcher disputed call completion")}>
+        ✕ Dispute — call didn't happen
+      </Btn>
+    )}
+  </div>
+)}
         </div>
       </div>
     );

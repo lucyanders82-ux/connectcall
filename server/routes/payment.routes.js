@@ -176,6 +176,13 @@ router.post('/watcher/refund', async (req, res) => {
     const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
 
+    // Notify host their booking was cancelled
+const { notifyHostBookingCancelled } = await import('../services/notification.service.js');
+const { data: host } = await supabase.from('users').select('contact_number, name').eq('id', pay.target_user_id).single();
+if (host?.contact_number) {
+  await notifyHostBookingCancelled(host.contact_number, pay.watcher_name);
+}
+
     // Check existing refund
     const { data: existingRefund } = await supabase
       .from('refund_requests')
@@ -226,22 +233,22 @@ router.post('/watcher/refund', async (req, res) => {
 
     // Requires host approval
     if (pay.status === 'confirmed' || pay.status === 'completed') {
-      const { data: refundReq } = await supabase.from('refund_requests').insert([{
-        payment_id: paymentId,
-        reason: reason || 'Call did not take place',
-        status: 'pending_host',
-        watcher_id: watcherId || pay.watcher_id,
-        watcher_name: pay.watcher_name,
-        refund_type: 'host_approval_required',
-      }]).select().single();
+  const { data: refundReq } = await supabase.from('refund_requests').insert([{
+    payment_id: paymentId,
+    reason: reason || 'Call did not take place',
+    status: 'pending',
+    watcher_id: watcherId || pay.watcher_id,
+    watcher_name: pay.watcher_name,
+    refund_type: 'host_no_contact',
+  }]).select().single();
 
-      return res.json({
-        success: true,
-        autoRefunded: false,
-        message: 'Host must approve this refund.',
-        refundId: refundReq.id,
-      });
-    }
+  return res.json({
+    success: true,
+    autoRefunded: false,
+    message: 'Refund request submitted — admin will review.',
+    refundId: refundReq.id,
+  });
+}
 
     return res.status(400).json({ error: `Cannot refund — status is "${pay.status}"` });
 
