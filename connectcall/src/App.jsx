@@ -1083,9 +1083,9 @@ function HomeHostCard({ u, i, setView, favorites, toggleFavorite, currentUser })
         </div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:10 }}>
           {isBlurred
-            ? <Chip label="••••" /><Chip label="••••" />
-            : safeArr(u.tags).slice(0,3).map(t=><Chip key={t} label={t}/>)
-          }
+  ? [1,2].map(i => <Chip key={i} label="••••" />)
+  : safeArr(u.tags).slice(0,3).map(t=><Chip key={t} label={t}/>)
+}
         </div>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
