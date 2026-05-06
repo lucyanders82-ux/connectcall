@@ -1214,7 +1214,7 @@ function SignupView({ onSignup, setView, toast }) {
           <>
             <SectionHeader icon="📞" title="Public Call Information" subtitle="This is what watchers see after payment." />
             <PhotoPick label="Profile Photo" value={form.profilePhoto} onChange={set("profilePhoto")} circle />
-            <Field label="Full Name *" value={form.name} onChange={set("name")} />
+            <Field label="Name *" value={form.name} onChange={set("name")} />
             <Field label="Bio" value={form.bio} onChange={set("bio")} rows={3} placeholder="Describe your expertise…" />
             <Field label="Video Platform *" value={form.platform} onChange={set("platform")} options={["WhatsApp","Telegram"]} />
             <Field label="Contact Number / ID *" value={form.contactNumber} onChange={set("contactNumber")} maxLength={10} type="tel" hint="10-digit number. Shown to watchers after payment." />
@@ -1294,7 +1294,7 @@ function LoginView({ onLogin, setView }) {
         <div style={{ textAlign:"center", marginBottom:28 }}>
           <div style={{ fontFamily:"'Playfair Display',serif", fontSize:30, color:c.goldL }}>Welcome Back</div>
         </div>
-        <Field label="Your Full Name" value={name} onChange={setName} placeholder="Exactly as registered" />
+        <Field label="Your Name" value={name} onChange={setName} placeholder="Exactly as registered" />
         <Field label="Password" value={pass} onChange={setPass} type="password" placeholder="••••••••" />
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
           <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)} style={{ width:16, height:16, accentColor:c.gold }} />
@@ -1608,7 +1608,7 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
                   {editStep===1 ? (
                     <>
                       <PhotoPick label="Profile Photo" value={ef.profilePhoto} onChange={eu("profilePhoto")} circle />
-                      <Field label="Full Name" value={ef.name||""} onChange={eu("name")} />
+                      <Field label="Name" value={ef.name||""} onChange={eu("name")} />
                       <Field label="Bio" value={ef.bio||""} onChange={eu("bio")} rows={3} />
                       <Field label="Platform" value={ef.platform||"WhatsApp"} onChange={eu("platform")} options={["WhatsApp","Telegram"]} />
                       <Field label="Contact" value={ef.contactNumber||""} onChange={eu("contactNumber")} maxLength={10} type="tel" />
