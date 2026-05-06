@@ -1608,7 +1608,7 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
                   {editStep===1 ? (
                     <>
                       <PhotoPick label="Profile Photo" value={ef.profilePhoto} onChange={eu("profilePhoto")} circle />
-                      <Field label="Name" value={ef.name||""} onChange={eu("name")} />
+                      <Field label="Username" value={ef.name||""} onChange={eu("name")} />
                       <Field label="Bio" value={ef.bio||""} onChange={eu("bio")} rows={3} />
                       <Field label="Platform" value={ef.platform||"WhatsApp"} onChange={eu("platform")} options={["WhatsApp","Telegram"]} />
                       <Field label="Contact" value={ef.contactNumber||""} onChange={eu("contactNumber")} maxLength={10} type="tel" />
