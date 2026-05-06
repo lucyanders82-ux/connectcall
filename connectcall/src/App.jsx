@@ -1079,7 +1079,7 @@ function HomeHostCard({ u, i, setView, favorites, toggleFavorite, currentUser })
         <div style={{ fontWeight:600, fontSize:15, marginBottom:2 }}>{u.name}</div>
         {!isBlurred && <HostRating hostId={u.id} />}
         <div style={{ color:c.sub, fontSize:11, marginBottom:8 }}>
-          {isBlurred ? "Sign up to see full bio" : `${(u.bio||"").slice(0,45)}${(u.bio||"").length>45?"…":""}`}
+          {`${(u.bio||"").slice(0,45)}${(u.bio||"").length>45?"…":""}`}
         </div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:10 }}>
           {isBlurred
@@ -1089,14 +1089,9 @@ function HomeHostCard({ u, i, setView, favorites, toggleFavorite, currentUser })
         </div>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
-            {isBlurred
-              ? <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, color:c.sub, fontWeight:600 }}>₵ ••</div>
-              : <>
-                  <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, color:c.goldL, fontWeight:600 }}>{S}{u.rate}</div>
-                  <div style={{ color:c.dim, fontSize:10 }}>via {u.platform}</div>
-                </>
-            }
-          </div>
+  <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, color:c.goldL, fontWeight:600 }}>{S}{u.rate}</div>
+  <div style={{ color:c.dim, fontSize:10 }}>via {u.platform}</div>
+</div>
           <div style={{ width:30, height:30, borderRadius:"50%", border:`1px solid ${isBlurred?c.sub+"50":c.gold+"50"}`, display:"flex", alignItems:"center", justifyContent:"center", color:isBlurred?c.sub:c.gold, fontSize:13 }}>
             {isBlurred?"🔒":"→"}
           </div>
@@ -1691,24 +1686,20 @@ function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav, curre
       <div style={{ padding: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <div style={{ fontWeight: 600, fontSize: 16 }}>{u.name}</div>
-          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: isBlurred ? c.sub : c.goldL, fontWeight: 600 }}>
-            {isBlurred ? "₵ ••" : `${S}${u.rate}`}
-          </div>
+          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL, fontWeight: 600 }}>
+  {S}{u.rate}
+</div>
         </div>
         {!isBlurred && <HostRating hostId={u.id} />}
         <div style={{ color: c.sub, fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
-          {isBlurred ? "Sign up to see full profile" : (
-            <>
-              {showFullBio ? u.bio : `${(u.bio || "").slice(0, 80)}${(u.bio || "").length > 80 ? "…" : ""}`}
-              {(u.bio || "").length > 80 && (
-                <span onClick={(e) => { e.stopPropagation(); setShowFullBio(!showFullBio); }}
-                  style={{ color: c.gold, cursor: "pointer", marginLeft: 5, fontSize: 11 }}>
-                  {showFullBio ? "show less" : "more"}
-                </span>
-              )}
-            </>
-          )}
-        </div>
+  {showFullBio ? u.bio : `${(u.bio || "").slice(0, 80)}${(u.bio || "").length > 80 ? "…" : ""}`}
+  {(u.bio || "").length > 80 && (
+    <span onClick={(e) => { e.stopPropagation(); setShowFullBio(!showFullBio); }}
+      style={{ color: c.gold, cursor: "pointer", marginLeft: 5, fontSize: 11 }}>
+      {showFullBio ? "show less" : "more"}
+    </span>
+  )}
+</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
           {isBlurred
             ? [1,2,3].map(i => <Chip key={i} label="••••" />)
