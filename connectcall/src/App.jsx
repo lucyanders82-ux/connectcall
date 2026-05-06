@@ -165,7 +165,7 @@ async function apiHostApproveRefund(refundId, hostId) {
 async function apiAdminApproveRefund(refundId) {
   const res = await fetch(`${API_BASE}/api/admin/approve-refund`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-admin-token": "my-secret-token-123" },
+    headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
     body: JSON.stringify({ refundId }),
   });
   return res.json();
