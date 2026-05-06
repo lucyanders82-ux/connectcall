@@ -133,7 +133,7 @@ async function apiConfirmCall(confirmationId, watcherId, response) {
 }
 
 async function apiWatcherRefund(paymentId, reason, watcherId) {
-  const res = await fetch(`${API_BASE}/api/watcher/refund`, {
+  const res = await fetch(`${API_BASE}/api/pay/watcher/refund`, {  // ← add /pay/
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ paymentId, reason, watcherId }),
