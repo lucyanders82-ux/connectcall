@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 
 const API_BASE      = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN;
 const PAYOUT_PROVIDERS = ["MTN","VOD","ATL"];
 const CURRENCY = "GHS";
 const S = "₵";
@@ -99,16 +100,17 @@ async function apiVerifyPayment(reference) {
 async function apiConfirmPayment(paymentId) {
   const res = await fetch(`${API_BASE}/api/admin/confirm-payment`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-admin-token": "my-secret-token-123" },
+    headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
     body: JSON.stringify({ paymentId }),
   });
   return res.json();
 }
 
+
 async function apiReleaseFunds(callId, paymentId) {
   const res = await fetch(`${API_BASE}/api/admin/release-funds`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-admin-token": "my-secret-token-123" },
+    headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
     body: JSON.stringify({ callId, paymentId }),
   });
   return res.json();
@@ -135,7 +137,7 @@ async function apiConfirmCall(confirmationId, watcherId, response) {
 async function apiDenyRefund(refundId) {
   const res = await fetch(`${API_BASE}/api/admin/deny-refund`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-admin-token": "my-secret-token-123" },
+    headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
     body: JSON.stringify({ refundId }),
   });
   return res.json();
@@ -783,27 +785,32 @@ export default function App() {
   };
 
   const handleLogin = async (name, password) => {
-    if (!name||!password) { toast("Enter login details","error"); return; }
-    const inputName = name.trim().toLowerCase();
-    const ADMIN_USER = import.meta.env.VITE_ADMIN_USER || "admin";
-    const ADMIN_PASS = import.meta.env.VITE_ADMIN_PASS || "admin123";
-    if (inputName === ADMIN_USER.toLowerCase() && password === ADMIN_PASS) {
-      setIsAdmin(true); setView("admin");
-      localStorage.setItem("isAdmin","true"); localStorage.setItem("view","admin");
-      toast("Admin access granted"); return;
-    }
-    const found = users.find(u=>u.name.toLowerCase()===inputName && (!u.password||u.password===password));
-    if (!found) { toast("Name or password incorrect","error"); return; }
-    const user = normaliseUser(found);
-    setCurrentUser(user);
-    const dest = "dashboard";
-    setView(dest);
-    localStorage.setItem("user", JSON.stringify(user));
-    localStorage.setItem("view", dest);
-    localStorage.setItem("isAdmin","false");
-    await supabase.from("users").update({ online:true }).eq("id", user.id);
-    toast(`Welcome back, ${user.name.split(" ")[0]} ✦`);
-  };
+  if (!name || !password) { toast("Enter login details", "error"); return; }
+  const inputName = name.trim().toLowerCase();
+  const ADMIN_USER = import.meta.env.VITE_ADMIN_USER || "admin";
+  const ADMIN_PASS = import.meta.env.VITE_ADMIN_PASS || "admin123";
+  if (inputName === ADMIN_USER.toLowerCase() && password === ADMIN_PASS) {
+    setIsAdmin(true); setView("admin");
+    localStorage.setItem("isAdmin", "true"); localStorage.setItem("view", "admin");
+    toast("Admin access granted"); return;
+  }
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, password }),
+  });
+  const result = await res.json();
+  if (!result.success) { toast(result.error || "Login failed", "error"); return; }
+  const user = normaliseUser(result.user);
+  setCurrentUser(user);
+  const dest = "dashboard";
+  setView(dest);
+  localStorage.setItem("user", JSON.stringify(user));
+  localStorage.setItem("view", dest);
+  localStorage.setItem("isAdmin", "false");
+  await supabase.from("users").update({ online: true }).eq("id", user.id);
+  toast(`Welcome back, ${user.name.split(" ")[0]} ✦`);
+};
 
   const handleUpdateUser = async (formData) => {
     const id = formData.id;
