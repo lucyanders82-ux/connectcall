@@ -27,7 +27,7 @@ const GLOBAL_CSS = `
   @keyframes pulse{0%,100%{box-shadow:0 0 0 0 ${c.green}44}70%{box-shadow:0 0 8px transparent}}
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes glow{0%,100%{box-shadow:0 0 20px ${c.gold}25}50%{box-shadow:0 0 40px ${c.gold}55}}
-  @keyframes slideIn{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+  @keyframes slideIn{from{transform:translateX(11git a0%);opacity:0}to{transform:translateX(0);opacity:1}}
   @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
   @keyframes petalFall{0%{transform:translateY(-10vh) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
   @keyframes shimmer{0%{background-position:-200% center}100%{background-position:200% center}}
@@ -78,6 +78,7 @@ function normaliseUser(row) {
     payoutNumber:   row.payout_number   ?? row.payoutNumber   ?? "",
     payoutProvider: row.payout_provider ?? row.payoutProvider ?? "",
     paystackRecipientCode: row.paystack_recipient_code ?? row.paystackRecipientCode ?? "",
+    contactRevealedAt: row.contact_revealed_at ?? null,
     avatar: (row.name || "?").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase(),
   };
 }
@@ -744,18 +745,28 @@ export default function App() {
       if (photo instanceof File) { const url = await uploadFile("gallery", photo); if (url) photoUrls.push(url); }
       else if (typeof photo==="string") photoUrls.push(photo);
     }
-    const { data, error } = await supabase.from("users").insert([{
-      name: formData.name, bio: formData.bio||"", platform: formData.platform||null,
-      contact_number: formData.contactNumber||null, rate: formData.rate||0,
-      tags: safeArr(formData.tags), profile_photo: profilePhotoUrl, photos: photoUrls,
-      online: true, wallet: 0, password: formData.password||"pass1234",
-      role: formData.role||"host", email: formData.email||"",
-      payout_name: "", payout_number: "", payout_provider: "", paystack_recipient_code: "",
-      accepted_terms: true, accepted_terms_at: new Date().toISOString(),
-    }]).select();
-    if (error) { toast(error.message||"Signup failed","error"); return null; }
-    if (!data || data.length === 0) { toast("Signup failed","error"); return null; }
-    const newUser = normaliseUser(data[0]);
+    const res = await fetch(`${API_BASE}/api/auth/signup`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: formData.name.trim(),
+    password: formData.password,
+    role: formData.role || "host",
+    bio: formData.bio || "",
+    platform: formData.platform || null,
+    contact_number: formData.contactNumber || null,
+    rate: formData.rate ? parseFloat(formData.rate) : 0,
+    tags: safeArr(formData.tags),
+    profile_photo: profilePhotoUrl,
+    photos: photoUrls,
+    email: formData.email || "",
+    payout_name: "", payout_number: "", payout_provider: "", paystack_recipient_code: "",
+    accepted_terms: true, accepted_terms_at: new Date().toISOString(),
+  }),
+});
+const result = await res.json();
+if (!result.success) { toast(result.error || "Signup failed", "error"); return null; }
+const newUser = normaliseUser(result.user);
     setUsers(x=>[newUser,...x]);
     setCurrentUser(newUser);
     if (formData.role === "host" && formData.payoutNumber && formData.payoutProvider) {
@@ -1355,7 +1366,8 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
   const hostRefundReqs = refundReqs.filter(r=>r.status==="pending_host" && myPay.some(p=>p.id===r.payment_id));
 
   const liveReqs = myPay.filter(p => {
-    if (p.status === "pending" || p.status === "confirmed") {
+  if (p.status === "disputed") return false;
+  if (p.status === "pending" || p.status === "confirmed") {
       const conf = (callConfirmations || []).find(cc => cc.payment_id === p.id);
       if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return false;
       if (p.status === "completed") return false;
@@ -1365,7 +1377,7 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
   });
 
   const closedReqs = myPay.filter(p => {
-    if (p.status === "completed" || p.status === "refunded" || p.status === "refunded_partial") return true;
+    if (p.status === "completed" || p.status === "refunded" || p.status === "refunded_partial" || p.status === "disputed") return true;
     const conf = (callConfirmations || []).find(cc => cc.payment_id === p.id);
     if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return true;
     return false;
@@ -2154,6 +2166,22 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
     const myRefund = refundReqs.find(r => r.payment_id===p.id);
     const myConf = (callConfirmations||[]).find(c => c.payment_id===p.id);
     const isDone = p.status==="completed" || myConf?.status==="confirmed" || myConf?.status==="auto_confirmed";
+    const isDisputed = p.status === "disputed";
+
+  const [secondsLeft, setSecondsLeft] = useState(null);
+  useEffect(() => {
+    if (p.status !== "confirmed" || !p.contact_revealed_at || myRefund || myConf || isDone) {
+      setSecondsLeft(null); return;
+    }
+    const revealedAt = new Date(p.contact_revealed_at).getTime();
+    const WINDOW_MS = 3 * 60 * 1000;
+    const tick = () => setSecondsLeft(Math.max(0, Math.round((revealedAt + WINDOW_MS - Date.now()) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [p.contact_revealed_at, p.status, myRefund, myConf, isDone]);
+
+  const formatCountdown = (s) => `${Math.floor(s/60)}:${(s%60).toString().padStart(2,"0")}`;
 
     // CHANGE 2: Early refund — show if contact revealed and no refund yet and no confirmation pending
     // Watcher can request refund if host contact revealed but they haven't been contacted in time
@@ -2163,7 +2191,9 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
 const canEarlyRefund = p.status==="confirmed"
   && !myRefund
   && !myConf
-  && !isDone;
+  && !isDone
+  && secondsLeft !== null
+  && secondsLeft > 0;
 
 // "Dispute" — only after host marks call done (myConf exists and pending)
 const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
@@ -2283,10 +2313,23 @@ const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
       </Btn>
     )}
     {canEarlyRefund && (
-      <Btn small variant="surface" onClick={()=>onRefundRequest(p.id,"Host contact revealed but host did not reach out in time")}>
-        ↩ Host didn't contact me
-      </Btn>
-    )}
+  <div style={{ marginBottom:8 }}>
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+      <span style={{ fontSize:12, color:c.orange }}>⏱ Host hasn't contacted you?</span>
+      <span style={{ fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, color:secondsLeft<=30?c.red:c.orange }}>
+        {formatCountdown(secondsLeft)}
+      </span>
+    </div>
+    <Btn small variant="orange" onClick={()=>onRefundRequest(p.id,"Host contact revealed but host did not reach out in time")} full>
+      ↩ Host didn't contact me (70% refund)
+    </Btn>
+  </div>
+)}
+{p.status==="confirmed" && !myRefund && !myConf && !isDone && secondsLeft===0 && (
+  <div style={{ fontSize:12, color:c.sub, padding:"8px 0" }}>
+    ✅ Window closed — payment queued for host after call.
+  </div>
+)}
     {canDispute && (
       <Btn small variant="red" onClick={()=>onRefundRequest(p.id,"Watcher disputed call completion")}>
         ✕ Dispute — call didn't happen
