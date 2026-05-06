@@ -4,6 +4,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import bcrypt from 'bcryptjs';
 
 // Import routes
 import paymentRoutes from './routes/payment.routes.js';
@@ -48,7 +49,7 @@ app.use('/api/pay', paymentRoutes);
 app.post('/api/admin/approve-refund', async (req, res) => {
   try {
     const adminToken = req.headers['x-admin-token'];
-    if (adminToken !== process.env.ADMIN_SECRET && adminToken !== 'my-secret-token-123') {
+    if (adminToken !== process.env.ADMIN_SECRET) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -103,7 +104,7 @@ app.post('/api/admin/approve-refund', async (req, res) => {
 app.post('/api/admin/deny-refund', async (req, res) => {
   try {
     const adminToken = req.headers['x-admin-token'];
-    if (adminToken !== process.env.ADMIN_SECRET && adminToken !== 'my-secret-token-123') {
+    if (adminToken !== process.env.ADMIN_SECRET) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -259,12 +260,15 @@ app.post('/api/call/mark-done', async (req, res) => {
     if (existing) return res.json({ success: true, alreadyMarked: true });
 
     const { data: call } = await supabase.from('calls').insert([{
-      payment_id: paymentId,
-      target_user_id: pay.target_user_id,
-      released: false,
-    }]).select().single();
+  payment_id: paymentId,
+  target_user_id: pay.target_user_id,
+  released: false,
+}]).select().single();
 
-    const { data: confirmation } = await supabase.from('call_confirmations').insert([{
+// ✅ Define expiresAt — 24 hours from now
+const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+const { data: confirmation } = await supabase.from('call_confirmations').insert([{
   payment_id: paymentId,
   call_id: call.id,
   status: 'pending',
@@ -473,6 +477,64 @@ app.get('/health', (req, res) => res.json({
   ts: new Date().toISOString(),
   uptime: process.uptime(),
 }));
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { name, password } = req.body;
+    if (!name || !password) return res.status(400).json({ error: 'Name and password required' });
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('*')
+      .ilike('name', name.trim())
+      .single();
+
+    if (!user) return res.status(401).json({ error: 'Name or password incorrect' });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ error: 'Name or password incorrect' });
+
+    const { password: _, payout_number, payout_name, paystack_recipient_code, ...safeUser } = user;
+    return res.json({ success: true, user: safeUser });
+
+  } catch (err) {
+    console.error('[Login] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { name, password, role, ...rest } = req.body;
+    if (!name || !password) return res.status(400).json({ error: 'Name and password required' });
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    const { data, error } = await supabase.from('users').insert([{
+      name,
+      password: hashedPassword,
+      role: role || 'watcher',
+      online: true,
+      wallet: 0,
+      payout_name: '',
+      payout_number: '',
+      payout_provider: '',
+      paystack_recipient_code: '',
+      accepted_terms: true,
+      accepted_terms_at: new Date().toISOString(),
+      ...rest,
+    }]).select().single();
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    const { password: _, ...safeUser } = data;
+    return res.json({ success: true, user: safeUser });
+
+  } catch (err) {
+    console.error('[Signup] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`✦ ConnectCall backend v2 running on :${PORT}`);
