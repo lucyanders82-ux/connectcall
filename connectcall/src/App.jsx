@@ -1059,7 +1059,7 @@ function HomeHostCard({ u, i, setView, favorites, toggleFavorite, currentUser })
       )}
       <div style={{ position:"relative", width:"100%", aspectRatio:"1/1", overflow:"hidden" }}>
         {u.profilePhoto ? (
-          <img src={u.profilePhoto} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", filter:isBlurred?"blur(6px) brightness(0.7)":"none", transform:isBlurred?"scale(1.05)":"none", transition:"filter .3s" }} />
+          <img src={u.profilePhoto} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", filter:isBlurred?"blur(4px) brightness(0.7)":"none", transform:isBlurred?"scale(1.05)":"none", transition:"filter .3s" }} />
         ) : (
           <div style={{ width:"100%", height:"100%", background:`linear-gradient(135deg,${c.goldD},#1a1a2e)`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Cormorant Garamond',serif", fontSize:48, color:c.gold, opacity:.3 }}>{u.avatar}</div>
         )}
@@ -1657,7 +1657,7 @@ function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav, curre
 
       <div style={{ position: "relative", width: "100%", aspectRatio: "1/1", overflow: "hidden" }}>
         {photos.length > 0 ? (
-          <img src={photos[idx]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: isBlurred ? "blur(6px) brightness(0.7)" : "none", transform: isBlurred ? "scale(1.05)" : "none", transition: "filter .3s" }} />
+          <img src={photos[idx]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: isBlurred ? "blur(4px) brightness(0.7)" : "none", transform: isBlurred ? "scale(1.05)" : "none", transition: "filter .3s" }} />
         ) : (
           <div style={{ width: "100%", height: "100%", background: `linear-gradient(135deg, ${c.goldD}, #1a1a2e)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Cormorant Garamond',serif", fontSize: 64, color: c.gold, opacity: .3 }}>{u.avatar}</div>
         )}
