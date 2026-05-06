@@ -671,7 +671,7 @@ export default function App() {
       try {
         await fetch(`${API_BASE}/api/admin/auto-confirm-pending`, { 
           method:"POST",
-          headers: { 'x-admin-token': 'my-secret-token-123' }
+          headers: { 'x-admin-token': 'ADMIN_TOKEN' }
         });
         await fetch(`${API_BASE}/api/call/check-expired`, { method:"POST" });
       } catch(e) {}
