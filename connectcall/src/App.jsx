@@ -721,7 +721,6 @@ export default function App() {
   }, []);
 
   const handleSignup = async (formData) => {
-    const handleSignup = async (formData) => {
   // Check duplicate username
   const nameExists = users.some(u => u.name.toLowerCase() === formData.name.trim().toLowerCase());
   if (nameExists) { toast("That username is already taken — choose another", "error"); return null; }
