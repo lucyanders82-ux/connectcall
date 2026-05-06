@@ -83,13 +83,20 @@ router.post('/initialize', async (req, res) => {
     }
 
     console.log(`[Init] Payment created — ref: ${reference}, total: GHS ${amounts.totalAmount}`);
-    return res.json({
-      authorizationUrl: psRes.data.authorization_url,
-      reference,
-      hostRate: amounts.hostRate,
-      platformFee: amounts.platformFee,
-      totalAmount: amounts.totalAmount,
-    });
+
+// Notify host of new booking
+const { notifyHostNewBooking } = await import('../services/notification.service.js');
+if (host.contact_number) {
+  await notifyHostNewBooking(host.contact_number, watcherName, watcherPlatform || 'WhatsApp');
+}
+
+return res.json({
+  authorizationUrl: psRes.data.authorization_url,
+  reference,
+  hostRate: amounts.hostRate,
+  platformFee: amounts.platformFee,
+  totalAmount: amounts.totalAmount,
+});
 
   } catch (err) {
     console.error('[Init] Exception:', err);

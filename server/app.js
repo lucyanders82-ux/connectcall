@@ -264,15 +264,21 @@ app.post('/api/call/mark-done', async (req, res) => {
       released: false,
     }]).select().single();
 
-    const expiresAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
     const { data: confirmation } = await supabase.from('call_confirmations').insert([{
-      payment_id: paymentId,
-      call_id: call.id,
-      status: 'pending',
-      expires_at: expiresAt,
-    }]).select().single();
+  payment_id: paymentId,
+  call_id: call.id,
+  status: 'pending',
+  expires_at: expiresAt,
+}]).select().single();
 
-    return res.json({ success: true, confirmationId: confirmation.id, expiresAt });
+// Notify watcher via SMS
+const { notifyWatcherCallMarkedDone } = await import('./services/notification.service.js');
+const { data: host } = await supabase.from('users').select('name').eq('id', pay.target_user_id).single();
+if (pay.watcher_contact) {
+  await notifyWatcherCallMarkedDone(pay.watcher_contact, host?.name || 'Your host');
+}
+
+return res.json({ success: true, confirmationId: confirmation.id, expiresAt });
 
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
