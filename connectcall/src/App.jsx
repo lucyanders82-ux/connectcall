@@ -211,6 +211,22 @@ function HostRating({ hostId }) {
     </div>
   );
 }
+function HostResponseRate({ hostId }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/response-rate/${hostId}`)
+      .then(r => r.json())
+      .then(d => { if (d.rate !== null) setData(d); });
+  }, [hostId]);
+  if (!data || data.total < 3) return null;
+  const color = data.rate >= 80 ? c.green : data.rate >= 50 ? c.orange : c.red;
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
+      <span style={{ fontSize:11, color }}>●</span>
+      <span style={{ fontSize:11, color:c.sub }}>Responds <strong style={{ color }}>{data.rate}%</strong> of the time</span>
+    </div>
+  );
+}
 
 function OnlineDot({ on }) {
   return <span style={{ display:"inline-block", width:9, height:9, borderRadius:"50%", background:on?c.green:c.dim, animation:on?"pulse 2s infinite":"none", flexShrink:0 }} />;
@@ -615,6 +631,18 @@ export default function App() {
       .on("postgres_changes", { event:"*", schema:"public", table:"payments" }, (payload) => {
         const newRow = payload.new;
         setPayments(prev => { const exists = prev.find(p => p.id === newRow.id); return exists ? prev.map(p => p.id===newRow.id ? newRow : p) : [newRow, ...prev]; });
+        if (
+          payload.eventType === "INSERT" &&
+          newRow.status === "confirmed" &&
+          newRow.target_user_id === currentUser?.id &&
+          currentUser?.role === "host" &&
+          Notification.permission === "granted"
+        ) {
+          new Notification("New booking! ✦", {
+            body: `${newRow.watcher_name || "A watcher"} just paid. Check your dashboard.`,
+            icon: "/favicon.ico",
+          });
+        }
       })
       .on("postgres_changes", { event:"*", schema:"public", table:"calls" }, (payload) => {
         const newRow = payload.new;
@@ -1004,6 +1032,7 @@ const newUser = normaliseUser(result.user);
       {view==="profile" && selectedUser && <ProfileView host={selectedUser} setView={setView} currentUser={currentUser} onInitiatePayment={handleInitiatePayment} toast={toast} />}
       {view==="signup"      && <SignupView onSignup={handleSignup} setView={setView} toast={toast} />}
       {view==="login"       && <LoginView onLogin={handleLogin} setView={setView} />}
+      {view==="forgotPassword" && <ForgotPasswordView setView={setView} toast={toast} />}
       {view==="browse" && <BrowseView users={users} payments={payments} onInitiatePayment={handleInitiatePayment} currentUser={currentUser} toast={toast} verifyPrompts={verifyPrompts} onAnswerVerify={handleAnswerVerify} setView={setView} refundReqs={refundReqs} onRefundRequest={handleRefundRequest} onHostApproveRefund={handleHostApproveRefund} pendingHost={pendingHost} setPendingHost={setPendingHost} callConfirmations={callConfirmations} onConfirmCall={handleConfirmCall} favorites={favorites} toggleFavorite={toggleFavorite} />}
       {view==="dashboard" && currentUser && currentUser.role==="host" && <DashboardView user={currentUser} users={users} payments={payments} calls={calls} verifyPrompts={verifyPrompts} onMarkDone={handleMarkDone} onUpdate={handleUpdateUser} onAnswerVerify={handleAnswerVerify} toast={toast} setView={setView} refundReqs={refundReqs} onHostApproveRefund={handleHostApproveRefund} callConfirmations={callConfirmations} />}
       {view==="dashboard" && currentUser && currentUser.role==="watcher" && <WatcherDashboardView user={currentUser} users={users} payments={payments} refundReqs={refundReqs} onRefundRequest={handleRefundRequest} toast={toast} setView={setView} callConfirmations={callConfirmations} onConfirmCall={handleConfirmCall} favorites={favorites} toggleFavorite={toggleFavorite} />}
@@ -1119,6 +1148,7 @@ function HomeHostCard({ u, i, setView, favorites, toggleFavorite, currentUser })
       <div style={{ padding:"14px 16px 16px" }}>
         <div style={{ fontWeight:600, fontSize:15, marginBottom:2 }}>{u.name}</div>
         {!isBlurred && <HostRating hostId={u.id} />}
+        {!isBlurred && <HostResponseRate hostId={u.id} />}
         <div style={{ color:c.sub, fontSize:11, marginBottom:8 }}>
           {`${(u.bio||"").slice(0,45)}${(u.bio||"").length>45?"…":""}`}
         </div>
@@ -1199,7 +1229,7 @@ function SignupView({ onSignup, setView, toast }) {
     if (!form.password.trim()) { toast("Password is required","error"); return; }
     if (!acceptedTerms) { toast("You must accept the Terms & Conditions","error"); return; }
     setBusy(true);
-    await onSignup({ name:form.name.trim(), password:form.password, role:"watcher" });
+    await onSignup({ name:form.name.trim(), password:form.password, role:"watcher", contactNumber:form.contactNumber||"" });
     setBusy(false);
   };
 
@@ -1235,6 +1265,7 @@ function SignupView({ onSignup, setView, toast }) {
         {mode==="watcher" && (
           <>
             <Field label="Username *" value={form.name} onChange={set("name")} placeholder="e.g. Lucy" />
+            <Field label="Contact Number" value={form.contactNumber} onChange={set("contactNumber")} type="tel" maxLength={10} hint="Optional — needed for password recovery" />
             <Field label="Password *" value={form.password} onChange={set("password")} type="password" placeholder="Enter password" />
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, marginTop:8 }}>
               <input type="checkbox" checked={acceptedTerms} onChange={e=>setAcceptedTerms(e.target.checked)} style={{ width:18, height:18, accentColor:c.gold }} />
@@ -1340,7 +1371,32 @@ function LoginView({ onLogin, setView }) {
         <div style={{ textAlign:"center", marginTop:14, color:c.sub, fontSize:13 }}>
           New? <span style={{ color:c.gold, cursor:"pointer" }} onClick={()=>setView("signup")}>Create a profile</span>
         </div>
+        <div style={{ textAlign:"center", marginTop:8, color:c.sub, fontSize:13 }}>
+          <span style={{ color:c.gold, cursor:"pointer" }} onClick={()=>setView("forgotPassword")}>Forgot password?</span>
+        </div>
       </div>
+    </div>
+  );
+}
+
+
+function MarkDoneBtn({ payId, live, onMarkDone }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Btn small variant="green" disabled={busy} onClick={async()=>{ setBusy(true); await onMarkDone(payId,live); setBusy(false); }} style={{ marginTop:10 }}>
+      {busy ? "Marking…" : "✓ Mark Call Done"}
+    </Btn>
+  );
+}
+
+function HostRefundRow({ r, onHostApproveRefund }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:8 }}>
+      <span style={{ color:c.sub, fontSize:13, flex:1 }}>{r.watcher_name} requests refund: {r.reason}</span>
+      <Btn variant="green" small disabled={busy} onClick={async()=>{ setBusy(true); await onHostApproveRefund(r.id); setBusy(false); }}>
+        {busy ? "Approving…" : "Approve Refund"}
+      </Btn>
     </div>
   );
 }
@@ -1410,10 +1466,7 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
           <div style={{ background:`${c.orange}15`, border:`1px solid ${c.orange}`, borderRadius:14, padding:18, marginBottom:20 }}>
             <div style={{ fontWeight:600, marginBottom:10, color:c.orange }}>↩ Refund Requests Awaiting Your Approval</div>
             {hostRefundReqs.map(r=>(
-              <div key={r.id} style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", marginBottom:8 }}>
-                <span style={{ color:c.sub, fontSize:13, flex:1 }}>{r.watcher_name} requests refund: {r.reason}</span>
-                <Btn variant="green" small onClick={()=>onHostApproveRefund(r.id)}>Approve Refund</Btn>
-              </div>
+              <HostRefundRow key={r.id} r={r} onHostApproveRefund={onHostApproveRefund} />
             ))}
           </div>
         )}
@@ -1538,7 +1591,7 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
                             </div>
                           )}
                           {pay.status==="confirmed" && !callDone && !conf && (
-                            <Btn small variant="green" onClick={()=>onMarkDone(pay.id,live)} style={{ marginTop:10 }}>✓ Mark Call Done</Btn>
+                            <MarkDoneBtn payId={pay.id} live={live} onMarkDone={onMarkDone} />
                           )}
                         </div>
                       );
@@ -2135,6 +2188,7 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
   const [ratedPayments, setRatedPayments] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [savedFavorites, setSavedFavorites] = useState([]);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   useEffect(() => {
     if (user?.id) {
@@ -2162,11 +2216,14 @@ function WatcherDashboardView({ user, users, payments, refundReqs, onRefundReque
   }, [refundReqs]);
 
   const PaymentCard = ({ p, isLive }) => {
-    const host = users.find(u => u.id===(p.target_user_id||p.targetUserId));
-    const myRefund = refundReqs.find(r => r.payment_id===p.id);
-    const myConf = (callConfirmations||[]).find(c => c.payment_id===p.id);
-    const isDone = p.status==="completed" || myConf?.status==="confirmed" || myConf?.status==="auto_confirmed";
-    const isDisputed = p.status === "disputed";
+  const host = users.find(u => u.id===(p.target_user_id||p.targetUserId));
+  const myRefund = refundReqs.find(r => r.payment_id===p.id);
+  const myConf = (callConfirmations||[]).find(c => c.payment_id===p.id);
+  const isDone = p.status==="completed" || myConf?.status==="confirmed" || myConf?.status==="auto_confirmed";
+  const isDisputed = p.status === "disputed";
+
+  const [confirming, setConfirming] = useState(false);  // ← add here
+  const [refunding, setRefunding] = useState(false);    // ← add this one too
 
   const [secondsLeft, setSecondsLeft] = useState(null);
   useEffect(() => {
@@ -2308,8 +2365,8 @@ const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
           {isLive && (
   <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
     {canCancel && (
-      <Btn small variant="orange" onClick={()=>onRefundRequest(p.id,"Cancelling request before contact revealed")}>
-        ✕ Cancel (get 70% back)
+      <Btn small variant="orange" disabled={refunding} onClick={async()=>{ setRefunding(true); await onRefundRequest(p.id,"Cancelling request before contact revealed"); setRefunding(false); }}>
+        {refunding ? "Cancelling…" : "✕ Cancel (get 70% back)"}
       </Btn>
     )}
     {canEarlyRefund && (
@@ -2320,19 +2377,22 @@ const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
         {formatCountdown(secondsLeft)}
       </span>
     </div>
-    <Btn small variant="orange" onClick={()=>onRefundRequest(p.id,"Host contact revealed but host did not reach out in time")} full>
-      ↩ Host didn't contact me (70% refund)
+    <Btn small variant="orange" disabled={refunding} onClick={async()=>{ setRefunding(true); await onRefundRequest(p.id,"Host contact revealed but host did not reach out in time"); setRefunding(false); }} full>
+      {refunding ? "Requesting…" : "↩ Host didn't contact me (70% refund)"}
     </Btn>
   </div>
 )}
 {p.status==="confirmed" && !myRefund && !myConf && !isDone && secondsLeft===0 && (
-  <div style={{ fontSize:12, color:c.sub, padding:"8px 0" }}>
-    ✅ Window closed — payment queued for host after call.
+  <div style={{ padding:"12px 14px", borderRadius:10, background:`${c.blue}15`, border:`1px solid ${c.blue}40`, marginTop:8 }}>
+    <div style={{ fontWeight:600, fontSize:13, color:c.blue, marginBottom:4 }}>⏱ Contact window closed</div>
+    <div style={{ fontSize:12, color:c.sub, lineHeight:1.6 }}>
+      Your payment is secured with the host. You'll be prompted to confirm once the call is complete — the host has 24 hours.
+    </div>
   </div>
 )}
     {canDispute && (
-      <Btn small variant="red" onClick={()=>onRefundRequest(p.id,"Watcher disputed call completion")}>
-        ✕ Dispute — call didn't happen
+      <Btn small variant="red" disabled={refunding} onClick={async()=>{ setRefunding(true); await onRefundRequest(p.id,"Watcher disputed call completion"); setRefunding(false); }}>
+        {refunding ? "Filing…" : "✕ Dispute — call didn't happen"}
       </Btn>
     )}
   </div>
@@ -2371,8 +2431,8 @@ const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
             </div>
           </div>
           <div style={{ display:"flex", gap:10 }}>
-            <Btn variant="green" onClick={()=>onConfirmCall(pendingConfirmation.id,"yes")} style={{ flex:1 }}>Yes — Pay Host</Btn>
-            <Btn variant="red" onClick={()=>onConfirmCall(pendingConfirmation.id,"no")} style={{ flex:1 }}>Dispute</Btn>
+            <Btn variant="green" disabled={confirmBusy} onClick={async()=>{ setConfirmBusy(true); await onConfirmCall(pendingConfirmation.id,"yes"); setConfirmBusy(false); }} style={{ flex:1 }}>{confirmBusy?"Confirming…":"Yes — Pay Host"}</Btn>
+            <Btn variant="red" disabled={confirmBusy} onClick={async()=>{ setConfirmBusy(true); await onConfirmCall(pendingConfirmation.id,"no"); setConfirmBusy(false); }} style={{ flex:1 }}>{confirmBusy?"Filing…":"Dispute"}</Btn>
           </div>
         </div>
       )}
@@ -2404,9 +2464,14 @@ const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
       )}
 
       {myPayments.length === 0 ? (
-        <div style={{ color:c.sub, textAlign:"center", padding:"40px 0" }}>
-          No requests yet. <span style={{ color:c.gold, cursor:"pointer" }} onClick={()=>setView("browse")}>Browse consultants →</span>
-        </div>
+  <div style={{ textAlign:"center", padding:"48px 24px", background:`linear-gradient(135deg,${c.card},#1a1a24)`, border:`1px solid ${c.border}`, borderRadius:18 }}>
+    <div style={{ fontSize:52, marginBottom:16 }}>🔮</div>
+    <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, color:c.goldL, marginBottom:10 }}>Make your first booking</div>
+    <div style={{ color:c.sub, fontSize:14, lineHeight:1.7, maxWidth:320, margin:"0 auto 24px" }}>
+      Browse our consultants and connect securely via Paystack escrow. Your payment is protected until the call is complete.
+    </div>
+    <Btn onClick={()=>setView("browse")}>Browse Consultants ✦</Btn>
+  </div>
       ) : (
         <>
           {livePayments.length > 0 ? (
@@ -2449,6 +2514,20 @@ const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function AdminRefundActions({ r, onApproveRefund, onDenyRefund }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+      <Btn small variant="green" disabled={busy} onClick={async()=>{ setBusy(true); await onApproveRefund(r.id); setBusy(false); }}>
+        {busy ? "Processing…" : "✅ Approve & Refund"}
+      </Btn>
+      <Btn small variant="red" disabled={busy} onClick={async()=>{ setBusy(true); await onDenyRefund(r.id); setBusy(false); }}>
+        {busy ? "Processing…" : "❌ Deny Refund"}
+      </Btn>
     </div>
   );
 }
@@ -2809,12 +2888,7 @@ function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, r
                       <span>Ref: <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11 }}>{pay.paystack_ref}</span></span>
                     </div>
                   )}
-                  {isPending && (
-                    <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-                      <Btn small variant="green" onClick={()=>onApproveRefund(r.id)}>✅ Approve & Refund</Btn>
-                      <Btn small variant="red" onClick={()=>onDenyRefund(r.id)}>❌ Deny Refund</Btn>
-                    </div>
-                  )}
+                  {isPending && <AdminRefundActions r={r} onApproveRefund={onApproveRefund} onDenyRefund={onDenyRefund} />}
                   {isApproved && <div style={{ fontSize:12, color:c.green, fontWeight:600 }}>💸 Refund processed — funds returned to watcher</div>}
                   {isDenied && <div style={{ fontSize:12, color:c.red }}>❌ Refund denied — payment remains with host</div>}
                 </div>
@@ -2930,6 +3004,131 @@ function TermsView({ onAccept, onDecline, setView }) {
   );
 }
 
+function ForgotPasswordView({ setView, toast }) {
+  const [step, setStep] = useState(1);
+  const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const requestReset = async () => {
+    if (!name.trim()) { toast("Enter your username", "error"); return; }
+    if (!contact.trim() || contact.length !== 10) { toast("Enter your 10-digit contact number", "error"); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/request-reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), contactNumber: contact }),
+      });
+      const data = await res.json();
+      if (!data.success) { toast(data.error || "Request failed", "error"); return; }
+      toast("OTP sent! Check your SMS ✦");
+      setStep(2);
+    } catch (err) {
+      toast("Network error — try again", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmReset = async () => {
+    if (!otp.trim() || otp.length !== 6) { toast("Enter the 6-digit OTP", "error"); return; }
+    if (!newPassword.trim()) { toast("Enter a new password", "error"); return; }
+    if (newPassword.length < 6) { toast("Password must be at least 6 characters", "error"); return; }
+    if (newPassword !== confirmPassword) { toast("Passwords do not match", "error"); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/confirm-reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), otp: otp.trim(), newPassword }),
+      });
+      const data = await res.json();
+      if (!data.success) { toast(data.error || "Reset failed", "error"); return; }
+      toast("Password reset! Sign in with your new password ✦");
+      setView("login");
+    } catch (err) {
+      toast("Network error — try again", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight:"calc(100vh - 60px)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div style={{ maxWidth:400, width:"100%", background:`linear-gradient(180deg,${c.card},#1a1a24)`, border:`1px solid ${c.border}`, borderRadius:24, padding:40, animation:"fadeUp .4s ease", boxShadow:`0 24px 60px #00000044` }}>
+
+        <div style={{ textAlign:"center", marginBottom:28 }}>
+          <div style={{ fontSize:36, marginBottom:10 }}>🔑</div>
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:28, color:c.goldL }}>
+            {step === 1 ? "Reset Password" : step === 2 ? "Enter OTP" : "New Password"}
+          </div>
+          <div style={{ color:c.sub, fontSize:13, marginTop:6 }}>
+            {step === 1 && "Enter your username and contact number"}
+            {step === 2 && "Enter the 6-digit code sent to your phone"}
+            {step === 3 && "Choose a new password"}
+          </div>
+        </div>
+
+        <div style={{ display:"flex", gap:6, marginBottom:28, justifyContent:"center" }}>
+          {[1,2,3].map(n => (
+            <div key={n} style={{ width:28, height:4, borderRadius:2, background: step >= n ? c.gold : c.border, transition:"background .3s" }} />
+          ))}
+        </div>
+
+        {step === 1 && (
+          <>
+            <Field label="Username *" value={name} onChange={setName} placeholder="Exactly as registered" />
+            <Field label="Contact Number *" value={contact} onChange={setContact} type="tel" maxLength={10} hint="The number on your account" />
+            <Btn onClick={requestReset} full disabled={busy} style={{ marginTop:8 }}>
+              {busy ? "Sending OTP…" : "Send Reset Code →"}
+            </Btn>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <div style={{ background:`${c.gold}10`, border:`1px solid ${c.gold}30`, borderRadius:10, padding:"12px 14px", marginBottom:18, fontSize:12, color:c.sub, lineHeight:1.7 }}>
+              A 6-digit code was sent to <strong style={{ color:c.text }}>{contact}</strong>. It expires in 15 minutes.
+            </div>
+            <Field label="OTP Code *" value={otp} onChange={v => setOtp(v.replace(/\D/g,"").slice(0,6))} placeholder="e.g. 482910" hint="6-digit code from SMS" />
+            <div style={{ display:"flex", gap:10 }}>
+              <Btn variant="surface" onClick={()=>setStep(1)} small>← Back</Btn>
+              <Btn onClick={()=>{ if(otp.length===6){ setStep(3); } else { toast("Enter the full 6-digit code","error"); } }} full disabled={busy}>
+                Verify Code →
+              </Btn>
+            </div>
+            <div style={{ textAlign:"center", marginTop:14 }}>
+              <span style={{ color:c.sub, fontSize:12 }}>Didn't receive it? </span>
+              <span style={{ color:c.gold, fontSize:12, cursor:"pointer" }} onClick={()=>{ setStep(1); setOtp(""); }}>Resend →</span>
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <Field label="New Password *" value={newPassword} onChange={setNewPassword} type="password" placeholder="At least 6 characters" />
+            <Field label="Confirm Password *" value={confirmPassword} onChange={setConfirmPassword} type="password" placeholder="Repeat your password" />
+            <div style={{ display:"flex", gap:10 }}>
+              <Btn variant="surface" onClick={()=>setStep(2)} small>← Back</Btn>
+              <Btn onClick={confirmReset} full disabled={busy}>
+                {busy ? "Resetting…" : "Reset Password →"}
+              </Btn>
+            </div>
+          </>
+        )}
+
+        <div style={{ textAlign:"center", marginTop:16, color:c.sub, fontSize:13 }}>
+          Remember it? <span style={{ color:c.gold, cursor:"pointer" }} onClick={()=>setView("login")}>Sign in</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfileView({ host, setView, currentUser, onInitiatePayment, toast }) {
   const [watcherContact, setWatcherContact] = useState('');
   const [watcherPlatform, setWatcherPlatform] = useState('WhatsApp');
@@ -2979,7 +3178,9 @@ function ProfileView({ host, setView, currentUser, onInitiatePayment, toast }) {
       </div>
       <div style={{ marginBottom:24 }}>
         <div style={{ fontFamily:"'Playfair Display',serif", fontSize:32, fontWeight:600, marginBottom:4 }}>{host.name}</div>
-        <div style={{ color:c.sub, fontSize:14, marginBottom:12 }}>{isBlurred ? "Sign up to read full bio" : host.bio}</div>
+      {!isBlurred && <HostRating hostId={host.id} />}
+      {!isBlurred && <HostResponseRate hostId={host.id} />}
+      <div style={{ color:c.sub, fontSize:14, marginBottom:12 }}>{isBlurred ? "Sign up to read full bio" : host.bio}</div>
         <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
           {isBlurred ? [1,2,3].map(i=><Chip key={i} label="••••" />) : safeArr(host.tags).map(t=><Chip key={t} label={t}/>)}
         </div>
