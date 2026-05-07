@@ -369,15 +369,6 @@ export default function App() {
     if (rRows) setRefundReqs(rRows);
     if (confRows) setCallConfirmations(confRows);
   };
-    // Refresh payments
-    const { data: pRows } = await supabase.from("payments").select("*").order("created_at", { ascending: false });
-    if (pRows) setPayments(pRows.map(r => ({ ...r, ts: new Date(r.created_at), targetUserId: r.target_user_id, watcherName: r.watcher_name })));
-    // Refresh disputes if one was opened
-    if (result.disputeOpened) {
-      const { data: dRows } = await supabase.from("disputes").select("*").order("created_at", { ascending: false });
-      if (dRows) setDisputes(dRows);
-    }
-  };
 
   const confirmPayment = async paymentId => {
     const result = await apiConfirmPayment(paymentId);
