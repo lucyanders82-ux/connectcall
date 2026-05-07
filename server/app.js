@@ -755,6 +755,36 @@ app.get('/api/rating/:hostId', async (req, res) => {
   res.json({ average: parseFloat(avg), count: data.length });
 });
 
+app.get('/api/admin/withdrawable-balance', requireAdmin, async (req, res) => {
+  try {
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('platform_fee')
+      .eq('paystack_verified', true)
+      .not('status', 'in', '("refunded","refunded_partial","failed","pending_init")');
+
+    const { data: withdrawals } = await supabase
+      .from('admin_withdrawals')
+      .select('amount')
+      .in('status', ['success', 'pending', 'otp']);
+
+    const totalFees = (payments || []).reduce((a, p) => a + Number(p.platform_fee || 0), 0);
+    const totalWithdrawn = (withdrawals || []).reduce((a, w) => a + Number(w.amount || 0), 0);
+    const withdrawable = Math.max(0, totalFees - totalWithdrawn);
+
+    return res.json({ 
+      success: true, 
+      withdrawable: parseFloat(withdrawable.toFixed(2)),
+      totalFees: parseFloat(totalFees.toFixed(2)),
+      totalWithdrawn: parseFloat(totalWithdrawn.toFixed(2)),
+    });
+
+  } catch (err) {
+    console.error('[WithdrawableBalance] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/admin/withdraw', requireAdmin, async (req, res) => {
   try {
     const { amount } = req.body;
