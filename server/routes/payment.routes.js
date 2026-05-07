@@ -982,6 +982,9 @@ if (followup.watcher_id !== watcherId) {
 }
 if (followup.status !== 'pending') return res.status(400).json({ error: 'Follow-up already responded to' });
 if (new Date() > new Date(followup.expires_at)) {
+      await supabase.from('followup_requests').update({ status: 'expired' }).eq('id', followupId);
+      return res.status(400).json({ error: 'Follow-up request expired' });
+    }
 
     if (accepted) {
       // Reset payment to confirmed state, reveal contact again
