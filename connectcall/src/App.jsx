@@ -350,6 +350,25 @@ export default function App() {
     } else {
       toast(result.message || "Dispute opened — host has 20 minutes to submit evidence", "warning");
     }
+
+    // Full refresh of all affected tables
+    const [
+      { data: pRows },
+      { data: dRows },
+      { data: rRows },
+      { data: confRows },
+    ] = await Promise.all([
+      supabase.from("payments").select("*").order("created_at", { ascending: false }),
+      supabase.from("disputes").select("*").order("created_at", { ascending: false }),
+      supabase.from("refund_requests").select("*").order("created_at", { ascending: false }),
+      supabase.from("call_confirmations").select("*").order("created_at", { ascending: false }),
+    ]);
+
+    if (pRows) setPayments(pRows.map(r => ({ ...r, ts: new Date(r.created_at), targetUserId: r.target_user_id, watcherName: r.watcher_name })));
+    if (dRows) setDisputes(dRows);
+    if (rRows) setRefundReqs(rRows);
+    if (confRows) setCallConfirmations(confRows);
+  };
     // Refresh payments
     const { data: pRows } = await supabase.from("payments").select("*").order("created_at", { ascending: false });
     if (pRows) setPayments(pRows.map(r => ({ ...r, ts: new Date(r.created_at), targetUserId: r.target_user_id, watcherName: r.watcher_name })));
