@@ -755,6 +755,69 @@ app.get('/api/rating/:hostId', async (req, res) => {
   res.json({ average: parseFloat(avg), count: data.length });
 });
 
+app.post('/api/admin/withdraw', requireAdmin, async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || amount < 1) return res.status(400).json({ error: 'Invalid amount' });
+
+    const adminName = process.env.ADMIN_PAYOUT_NAME;
+    const adminNumber = process.env.ADMIN_PAYOUT_NUMBER;
+    const adminProvider = process.env.ADMIN_PAYOUT_PROVIDER;
+
+    if (!adminName || !adminNumber || !adminProvider) {
+      return res.status(500).json({ error: 'Admin payout details not configured' });
+    }
+
+    const recipientRes = await fetch('https://api.paystack.co/transferrecipient', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'ghipss',
+        name: adminName,
+        account_number: adminNumber,
+        bank_code: adminProvider,
+        currency: 'GHS',
+      }),
+    });
+    const recipientData = await recipientRes.json();
+    if (!recipientData.status) return res.status(400).json({ error: recipientData.message });
+
+    const transferRes = await fetch('https://api.paystack.co/transfer', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: 'balance',
+        amount: Math.round(amount * 100),
+        recipient: recipientData.data.recipient_code,
+        reason: `ConnectCall admin withdrawal — ${new Date().toISOString()}`,
+        currency: 'GHS',
+      }),
+    });
+    const transferData = await transferRes.json();
+    if (!transferData.status) return res.status(400).json({ error: transferData.message });
+
+    await supabase.from('admin_withdrawals').insert([{
+      amount,
+      transfer_code: transferData.data.transfer_code,
+      recipient_code: recipientData.data.recipient_code,
+      status: transferData.data.status,
+    }]);
+
+    console.log(`[AdminWithdraw] GHS ${amount} initiated — ${transferData.data.transfer_code}`);
+    return res.json({ success: true, transferCode: transferData.data.transfer_code, status: transferData.data.status });
+
+  } catch (err) {
+    console.error('[AdminWithdraw] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/health', (req, res) => res.json({
   ok: true,
   ts: new Date().toISOString(),
