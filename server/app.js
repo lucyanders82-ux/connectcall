@@ -128,6 +128,18 @@ app.post('/api/auth/request-reset', async (req, res) => {
       return res.status(400).json({ error: 'Contact number does not match our records' });
     }
 
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: recentReset } = await supabase
+      .from('password_resets')
+      .select('id, created_at')
+      .eq('user_id', user.id)
+      .gt('created_at', fiveMinutesAgo)
+      .limit(1)
+      .single();
+
+    if (recentReset) {
+      return res.status(429).json({ error: 'A reset code was already sent. Please wait 5 minutes before requesting another.' });
+    }
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const hashedOtp = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
