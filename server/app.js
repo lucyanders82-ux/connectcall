@@ -283,9 +283,11 @@ app.post('/api/admin/approve-refund', requireAdmin, async (req, res) => {
         Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
         'Content-Type': 'application/json',
       },
+      const refundableAmount = refund.refund_amount 
+        || parseFloat((parseFloat(pay.total_charged || pay.amount) * 0.7).toFixed(2));
       body: JSON.stringify({
         transaction: pay.paystack_ref,
-        amount: Math.round((refund.refund_amount || pay.total_charged || pay.amount) * 100),
+        amount: Math.round(refundableAmount * 100),
       }),
     });
     const refundData = await refundRes.json();
@@ -413,6 +415,57 @@ app.post('/api/admin/auto-confirm-pending', requireAdmin, async (req, res) => {
 });
 
 app.use('/api/admin', requireAdmin, adminRoutes);
+
+app.post('/api/admin/resolve-dispute', requireAdmin, async (req, res) => {
+  try {
+    const { disputeId, verdict } = req.body;
+    if (!disputeId || !['host', 'watcher'].includes(verdict)) {
+      return res.status(400).json({ error: 'disputeId and verdict (host or watcher) required' });
+    }
+
+    const { resolveDisputeOutcome } = await import('./routes/payment.routes.js');
+    // resolveDisputeOutcome is not exported — call it via the internal logic:
+    const now = new Date().toISOString();
+    await supabase.from('disputes').update({
+      status: verdict === 'host' ? 'resolved_host' : 'resolved_watcher',
+      resolved_at: now,
+      resolved_by: 'admin',
+    }).eq('id', disputeId);
+
+    const { data: dispute } = await supabase.from('disputes').select('*, payment:payment_id(*)').eq('id', disputeId).single();
+    const payment = dispute?.payment;
+    const totalPaid = parseFloat(payment?.total_charged || payment?.amount || 0);
+    const refundAmount = parseFloat((totalPaid * parseFloat(process.env.EARLY_REFUND_PERCENT || '70') / 100).toFixed(2));
+
+    if (verdict === 'watcher') {
+      if (payment?.paystack_ref) {
+        await fetch('https://api.paystack.co/refund', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transaction: payment.paystack_ref, amount: Math.round(refundAmount * 100) }),
+        });
+      }
+      await supabase.from('payments').update({ status: 'refunded_partial' }).eq('id', payment.id);
+      await supabase.from('refund_requests').update({ status: 'approved', refund_amount: refundAmount, resolved_at: now }).eq('dispute_id', disputeId);
+    } else {
+      await supabase.from('payments').update({ status: 'completed' }).eq('id', payment.id);
+      await supabase.from('refund_requests').update({ status: 'rejected', resolved_at: now }).eq('dispute_id', disputeId);
+      const { processHostPayout } = await import('./services/payment.service.js');
+      await processHostPayout(payment).catch(e => console.error('[AdminResolve] Payout failed:', e.message));
+    }
+
+    await supabase.from('dispute_messages').insert([{
+      dispute_id: disputeId,
+      sender_role: 'system',
+      message: `Admin manually resolved dispute in favor of ${verdict === 'host' ? 'HOST' : 'WATCHER'}.`,
+    }]);
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[AdminResolveDispute] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  HOST ROUTES
@@ -612,25 +665,60 @@ app.post('/api/call/respond', async (req, res) => {
     }
 
     if (response === 'no') {
-      // Watcher disputes — mark confirmation denied, create admin review refund
       await supabase.from('call_confirmations').update({
         status: 'denied',
         responded_at: new Date().toISOString(),
       }).eq('id', confirmationId);
 
-      await supabase.from('refund_requests').insert([{
+      // Create refund request
+      const { data: refundReq } = await supabase.from('refund_requests').insert([{
         payment_id: pay.id,
         reason: 'Watcher disputed call completion',
         status: 'pending',
         watcher_id: watcherId || pay.watcher_id,
         watcher_name: pay.watcher_name,
-        refund_type: 'dispute',
+        refund_type: 'dispute_evidence',
+        auto_refunded: false,
+      }]).select().single();
+
+      // Open dispute record
+      const { data: dispute } = await supabase.from('disputes').insert([{
+        payment_id: pay.id,
+        refund_request_id: refundReq?.id,
+        status: 'open',
+        opened_by: 'watcher',
+        opened_reason: 'Watcher disputed call completion',
+        host_evidence_deadline: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+      }]).select().single();
+
+      // Link dispute back to refund request
+      if (refundReq?.id && dispute?.id) {
+        await supabase.from('refund_requests')
+          .update({ dispute_id: dispute.id })
+          .eq('id', refundReq.id);
+      }
+
+      // System message
+      await supabase.from('dispute_messages').insert([{
+        dispute_id: dispute.id,
+        sender_role: 'system',
+        message: `Dispute opened. Host has 20 minutes to submit evidence of the call to ${pay.watcher_contact}.`,
       }]);
 
-      // Move to disputed so it leaves host's live dashboard
       await supabase.from('payments').update({ status: 'disputed' }).eq('id', pay.id);
 
-      return res.json({ success: true, confirmed: false, message: 'Dispute filed — admin will review' });
+      // Notify host
+      try {
+        const { data: host } = await supabase.from('users').select('contact_number').eq('id', pay.target_user_id).single();
+        if (host?.contact_number) {
+          const { notifyHostDisputeOpened } = await import('./services/notification.service.js');
+          await notifyHostDisputeOpened(host.contact_number, pay.watcher_name, new Date(Date.now() + 20 * 60 * 1000));
+        }
+      } catch (e) {
+        console.error('[CallRespond] Notify host failed:', e.message);
+      }
+
+      return res.json({ success: true, confirmed: false, disputeOpened: true, disputeId: dispute.id, message: 'Dispute opened — host has 20 minutes to submit evidence' });
     }
 
     return res.status(400).json({ error: "Response must be 'yes' or 'no'" });
