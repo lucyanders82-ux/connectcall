@@ -345,10 +345,19 @@ export default function App() {
   const handleConfirmCall = async (confirmationId, response) => {
     const result = await apiConfirmCall(confirmationId, currentUser?.id, response);
     if (result.error) { toast(result.error, "error"); return; }
-    if (response === "yes") toast("Call confirmed! Host has been paid ✦", "success");
-    else toast("Dispute filed — admin will review", "info");
+    if (response === "yes") {
+      toast("Call confirmed! Host has been paid ✦", "success");
+    } else {
+      toast(result.message || "Dispute opened — host has 20 minutes to submit evidence", "warning");
+    }
+    // Refresh payments
     const { data: pRows } = await supabase.from("payments").select("*").order("created_at", { ascending: false });
     if (pRows) setPayments(pRows.map(r => ({ ...r, ts: new Date(r.created_at), targetUserId: r.target_user_id, watcherName: r.watcher_name })));
+    // Refresh disputes if one was opened
+    if (result.disputeOpened) {
+      const { data: dRows } = await supabase.from("disputes").select("*").order("created_at", { ascending: false });
+      if (dRows) setDisputes(dRows);
+    }
   };
 
   const confirmPayment = async paymentId => {
