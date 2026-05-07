@@ -277,14 +277,14 @@ app.post('/api/admin/approve-refund', requireAdmin, async (req, res) => {
 
     const pay = refund.payments;
 
+    const refundableAmount = refund.refund_amount 
+      || parseFloat((parseFloat(pay.total_charged || pay.amount) * 0.7).toFixed(2));
     const refundRes = await fetch('https://api.paystack.co/refund', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
         'Content-Type': 'application/json',
       },
-      const refundableAmount = refund.refund_amount 
-        || parseFloat((parseFloat(pay.total_charged || pay.amount) * 0.7).toFixed(2));
       body: JSON.stringify({
         transaction: pay.paystack_ref,
         amount: Math.round(refundableAmount * 100),
@@ -942,12 +942,6 @@ app.get('/health', (req, res) => res.json({
   ts: new Date().toISOString(),
   uptime: process.uptime(),
 }));
-
-app.listen(PORT, () => {
-  console.log(`✦ ConnectCall backend running on :${PORT}`);
-  console.log(`   ADMIN_SECRET set: ${!!ADMIN_SECRET}`);
-  console.log(`   FRONTEND_URL: ${FRONTEND_URL}`);
-});
 
 app.listen(PORT, () => {
   console.log(`✦ ConnectCall backend running on :${PORT}`);
