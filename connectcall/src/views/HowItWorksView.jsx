@@ -34,7 +34,7 @@ export function HowItWorksView({ setView }) {
     {
       icon: "🔄",
       title: "Follow-Up Calls",
-      desc: "If a host misses the 3-minute window, they can request a follow-up. You'll be notified and can accept to reveal their contact again, or decline to finalize your refund.",
+      desc: "If a host misses the 3-minute window, they can request a follow-up. You'll be notified and have 10 minutes to accept — which reveals their contact again — or decline to finalize your refund.",
     },
     {
       icon: "🛡",
@@ -79,7 +79,7 @@ export function HowItWorksView({ setView }) {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
           {rules.map((r, i) => (
             <div key={i} className="fu" style={{
               animationDelay: `${i * 0.08}s`,

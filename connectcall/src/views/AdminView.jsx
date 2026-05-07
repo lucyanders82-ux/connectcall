@@ -126,18 +126,18 @@ export function AdminView({
       <div key={dispute.id} style={{ background: c.card, border: `2px solid ${borderColor}40`, borderRadius: 14, marginBottom: 12, overflow: "hidden" }}>
         <div onClick={() => toggleDispute(dispute.id)} style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", flexWrap: "wrap", gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <span style={{ fontSize: 18 }}>{isOpen ? "🔴" : isAI ? "🤖" : isEscalated ? "🚨" : isResolved ? "✅" : "⚪"}</span>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>
-                  {host?.name || "Host"} ←→ {watcher?.name || pay?.watcher_name || "Watcher"}
-                </div>
-                <div style={{ fontSize: 11, color: c.sub }}>
-                  {S}{pay?.total_charged || pay?.amount || 0} · Opened {new Date(dispute.opened_at).toLocaleString()}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 18 }}>{isOpen ? "🔴" : isAI ? "🤖" : isEscalated ? "🚨" : isResolved ? "✅" : "⚪"}</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      {host?.name || "Host"} ←→ {watcher?.name || pay?.watcher_name || "Watcher"}
+                    </div>
+                    <div style={{ fontSize: 11, color: c.sub }}>
+                      {S}{pay?.total_charged || pay?.amount || 0} · Opened {new Date(dispute.created_at).toLocaleString()}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{
               padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
@@ -220,19 +220,42 @@ export function AdminView({
                 </Btn>
                 <Btn
                   small variant="green"
-                  onClick={(e) => {
+                  disabled={aiVerdictBusy[dispute.id]}
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    // Manual resolve for host — calls the AI verdict route but we can also add a manual override
-                    toast("Manual resolution coming soon — use AI verdict for now", "info");
+                    setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: true }));
+                    try {
+                      const res = await fetch(`${import.meta.env.VITE_API_BASE}/api/admin/resolve-dispute`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
+                        body: JSON.stringify({ disputeId: dispute.id, verdict: "host" }),
+                      });
+                      const result = await res.json();
+                      if (result.error) toast("Failed: " + result.error, "error");
+                      else toast("Ruled in host's favor — payment released", "success");
+                    } catch (e) { toast("Request failed", "error"); }
+                    setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: false }));
                   }}
                 >
                   ✅ Rule for Host
                 </Btn>
                 <Btn
                   small variant="red"
-                  onClick={(e) => {
+                  disabled={aiVerdictBusy[dispute.id]}
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    toast("Manual resolution coming soon — use AI verdict for now", "info");
+                    setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: true }));
+                    try {
+                      const res = await fetch(`${import.meta.env.VITE_API_BASE}/api/admin/resolve-dispute`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
+                        body: JSON.stringify({ disputeId: dispute.id, verdict: "watcher" }),
+                      });
+                      const result = await res.json();
+                      if (result.error) toast("Failed: " + result.error, "error");
+                      else toast("Ruled in watcher's favor — refund processed", "success");
+                    } catch (e) { toast("Request failed", "error"); }
+                    setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: false }));
                   }}
                 >
                   ❌ Rule for Watcher
@@ -625,7 +648,7 @@ export function AdminView({
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.red, display: "inline-block", animation: "pulse 2s infinite" }} />
                   <div style={{ fontWeight: 600, color: c.red, fontSize: 14 }}>Active Disputes</div>
                 </div>
-                {[...openDisputes, ...escalatedDisputes, ...aiPendingDisputes].map(d => renderDisputeCard(d))}
+                {Array.from(new Map([...openDisputes, ...escalatedDisputes, ...aiPendingDisputes].map(d => [d.id, d])).values()).map(d => renderDisputeCard(d))}
               </div>
             )}
 

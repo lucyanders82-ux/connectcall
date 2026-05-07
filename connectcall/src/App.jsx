@@ -8,7 +8,7 @@ import {
   apiInitializePayment, apiVerifyPayment, apiConfirmPayment,
   apiReleaseFunds, apiOnboardPayout, apiConfirmCall,
   apiDenyRefund, apiWatcherRefund, apiHostApproveRefund, apiAdminApproveRefund,
-  apiSubmitEvidence, apiRequestFollowup, apiAcceptFollowup, apiGetDispute, apiCheckExpired,  // NEW
+  apiSubmitEvidence, apiRequestFollowup, apiAcceptFollowup, apiGetDispute,
 } from "./api";
 
 // ── shared UI ─────────────────────────────────────────────────────────────────
@@ -176,7 +176,6 @@ export default function App() {
     const run = async () => {
       try {
         await fetch(`${API_BASE}/api/admin/auto-confirm-pending`, { method: "POST", headers: { "x-admin-token": ADMIN_TOKEN } });
-        await apiCheckExpired(); // NEW: also expires disputes & follow-ups
       } catch {}
     };
     run();
@@ -201,8 +200,8 @@ export default function App() {
           supabase.from("refund_requests").select("*").order("created_at", { ascending: false }),
           supabase.from("call_confirmations").select("*").order("created_at", { ascending: false }),
           supabase.from("reports").select("*").order("created_at", { ascending: false }),
-          supabase.from("disputes").select("*").order("opened_at", { ascending: false }),           // NEW
-          supabase.from("followup_requests").select("*").order("requested_at", { ascending: false }), // NEW
+          supabase.from("disputes").select("*").order("created_at", { ascending: false }),
+          supabase.from("followup_requests").select("*").order("created_at", { ascending: false }),
         ]);
         if (uRows) {
           const mapped = uRows.map(normaliseUser);
@@ -396,7 +395,7 @@ export default function App() {
       const { data: dRows } = await supabase.from("disputes").select("*").order("opened_at", { ascending: false });
       if (dRows) setDisputes(dRows);
     }
-    toast(result.disputeOpened ? result.message : result.message, result.autoRefunded ? "success" : result.disputeOpened ? "warning" : "info");
+    toast(result.message, result.autoRefunded ? "success" : result.disputeOpened ? "warning" : "info");
     return result;
   };
 

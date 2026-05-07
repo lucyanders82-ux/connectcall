@@ -5,6 +5,7 @@ import cors from 'cors';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
+import cron from 'node-cron';
 
 // Import routes
 import paymentRoutes from './routes/payment.routes.js';
@@ -858,4 +859,43 @@ app.listen(PORT, () => {
   console.log(`✦ ConnectCall backend running on :${PORT}`);
   console.log(`   ADMIN_SECRET set: ${!!ADMIN_SECRET}`);
   console.log(`   FRONTEND_URL: ${FRONTEND_URL}`);
+});
+
+app.listen(PORT, () => {
+  console.log(`✦ ConnectCall backend running on :${PORT}`);
+  console.log(`   ADMIN_SECRET set: ${!!ADMIN_SECRET}`);
+  console.log(`   FRONTEND_URL: ${FRONTEND_URL}`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CRON JOBS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Run every 2 minutes — expire stale windows & auto-resolve disputes
+cron.schedule('*/2 * * * *', async () => {
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/pay/call/check-expired`);
+    const data = await res.json();
+    if (data.expiredConfirmations || data.expiredFollowups || data.resolvedDisputes) {
+      console.log(`[Cron] check-expired — confirmations: ${data.expiredConfirmations}, followups: ${data.expiredFollowups}, disputes: ${data.resolvedDisputes}`);
+    }
+  } catch (e) {
+    console.error('[Cron] check-expired failed:', e.message);
+  }
+});
+
+// Run every 30 minutes — auto-confirm calls where watcher didn't respond in 24h
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/call/check-expired`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    if (data.processed) {
+      console.log(`[Cron] auto-confirmed ${data.processed} expired call confirmations`);
+    }
+  } catch (e) {
+    console.error('[Cron] call check-expired failed:', e.message);
+  }
 });

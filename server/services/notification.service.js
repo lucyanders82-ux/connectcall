@@ -33,7 +33,7 @@ export async function notifyHostBookingCancelled(hostContact, watcherName) {
     const to = formatGhanaNumber(hostContact);
     await sms.send({
       to: [to],
-      message: `ConnectCall: ${watcherName} has reported that you did not contact them. Their refund request is under admin review. Please log in for details: connectcall.vercel.app`,
+      message: `ConnectCall: ${watcherName} reported no contact. Their booking has been cancelled and a 70% refund issued. Log in for details: connectcall.vercel.app`,
       from: process.env.AT_SENDER_ID || undefined,
     });
     console.log(`[SMS] Host cancellation notified — ${to}`);
@@ -108,7 +108,7 @@ export async function notifyFollowupRequest(watcherContact, hostName) {
     const to = formatGhanaNumber(watcherContact);
     await sms.send({
       to: [to],
-      message: `ConnectCall: ${hostName} wants to retry your cancelled call. You have 3 mins to accept at connectcall.vercel.app — if you decline, your 70% refund is final.`,
+      message: `ConnectCall: ${hostName} wants to retry your cancelled call. You have 10 mins to accept at connectcall.vercel.app — if you decline, your 70% refund is final.`,
       from: process.env.AT_SENDER_ID || undefined,
     });
     console.log(`[SMS] Follow-up request notified — ${to}`);

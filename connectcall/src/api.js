@@ -117,7 +117,7 @@ export async function apiSubmitEvidence(disputeId, userId, role, evidenceUrl) {
 export async function apiTriggerAIVerdict(disputeId) {
   const res = await fetch(`${API_BASE}/api/pay/dispute/ai-verdict`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
     body: JSON.stringify({ disputeId }),
   });
   return res.json();
@@ -156,11 +156,13 @@ export async function apiUploadEvidence(file, userId) {
 
   if (error) throw error;
 
-  const { data: urlData } = supabase.storage
+  const { data: urlData, error: urlError } = await supabase.storage
     .from('evidence')
-    .getPublicUrl(data.path);
+    .createSignedUrl(data.path, 60 * 60 * 24 * 7); // 7 days
 
-  return urlData.publicUrl;
+  if (urlError) throw urlError;
+
+  return urlData.signedUrl;
 }
 
 // Check expired windows (cron/polling)

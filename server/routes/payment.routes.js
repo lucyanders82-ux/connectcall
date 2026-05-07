@@ -12,6 +12,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 // Window (ms) during which watcher can claim "host didn't contact me"
 const NO_CONTACT_WINDOW_MS = 3 * 60 * 1000; // 3 minutes
 const EVIDENCE_WINDOW_MS = 20 * 60 * 1000; // 20 minutes per side
+const FOLLOWUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes for watcher to respond to follow-up
 
 async function paystackRequest(method, path, body) {
   const res = await fetch(`https://api.paystack.co${path}`, {
@@ -215,13 +216,16 @@ router.post('/watcher/refund', async (req, res) => {
 
     // ── Case 2 & 3: Contact revealed + "host didn't contact me" claim ──
     if (pay.status === 'confirmed' && isNoContactClaim) {
-      const revealedAt = pay.contact_revealed_at ? new Date(pay.contact_revealed_at) : null;
-      const now = new Date();
+      const revealedAt = pay.contact_revealed_at 
+  ? new Date(pay.contact_revealed_at) 
+  : pay.confirmed_at 
+    ? new Date(pay.confirmed_at) 
+    : null;
+const now = new Date();
 
-      if (!revealedAt) {
-        // No timestamp stored — fall back to dispute flow
-        return await handleNoContactWithDisputeCheck(pay, reason, watcherId, res);
-      }
+if (!revealedAt) {
+  return res.status(400).json({ error: 'Cannot determine contact reveal time. Please contact support.' });
+}
 
       const msSinceReveal = now - revealedAt;
       if (msSinceReveal > NO_CONTACT_WINDOW_MS) {
@@ -367,7 +371,7 @@ async function handleNoContactWithDisputeCheck(pay, reason, watcherId, res) {
     .limit(1)
     .single();
 
-  const hostMarkedDone = callConfirmation && callConfirmation.status !== 'pending';
+  const hostMarkedDone = callConfirmation && callConfirmation.status === 'confirmed';
 
   if (hostMarkedDone) {
     // ── NEW FLOW: Host claims call happened → open dispute with evidence ──
@@ -396,12 +400,13 @@ async function openDisputeWithEvidence(pay, reason, watcherId, callConfirmation,
 
   // Create dispute record
   const { data: dispute } = await supabase.from('disputes').insert([{
-    payment_id: pay.id,
-    refund_request_id: refundReq?.id,
-    status: 'open',
-    opened_by: 'watcher',
-    opened_reason: reason || 'Watcher claims host did not call despite marking done',
-  }]).select().single();
+  payment_id: pay.id,
+  refund_request_id: refundReq?.id,
+  status: 'open',
+  opened_by: 'watcher',
+  opened_reason: reason || 'Watcher claims host did not call despite marking done',
+  host_evidence_deadline: hostEvidenceDeadline.toISOString(), // ← add this line
+}]).select().single();
 
   // Link dispute to refund request
   if (refundReq?.id && dispute?.id) {
@@ -529,6 +534,19 @@ router.post('/dispute/submit-evidence', async (req, res) => {
     if (dispute.status === 'resolved_host' || dispute.status === 'resolved_watcher') {
       return res.status(400).json({ error: 'Dispute already resolved' });
     }
+
+    const { data: payment } = await supabase
+  .from('payments')
+  .select('target_user_id, watcher_id')
+  .eq('id', dispute.payment_id)
+  .single();
+
+if (role === 'host' && payment.target_user_id !== userId) {
+  return res.status(403).json({ error: 'Unauthorized' });
+}
+if (role === 'watcher' && payment.watcher_id !== userId) {
+  return res.status(403).json({ error: 'Unauthorized' });
+}
 
     const now = new Date().toISOString();
 
@@ -690,6 +708,25 @@ async function triggerAIVerdict(disputeId) {
   return { verdict: aiResult.verdict, confidence: aiResult.confidence, autoResolved: aiResult.confidence >= 85 };
 }
 
+async function fetchImageAsBase64(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer).toString('base64');
+}
+
+function getImageMediaType(url) {
+  const ext = url.split('?')[0].split('.').pop().toLowerCase();
+  const types = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+  };
+  return types[ext] || 'image/jpeg';
+}
+
 // ── Placeholder AI analysis — replace with actual Claude/GPT Vision call ──
 // ── Real Claude Vision AI analysis ──
 async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
@@ -713,7 +750,7 @@ async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-opus-20240229',
+        model: 'claude-opus-4-5',
         max_tokens: 1024,
         messages: [
           {
@@ -751,15 +788,17 @@ RULES:
               {
                 type: 'image',
                 source: {
-                  type: 'url',
-                  url: hostEvidenceUrl,
+                  type: 'base64',
+                  media_type: await getImageMediaType(hostEvidenceUrl),
+                  data: await fetchImageAsBase64(hostEvidenceUrl),
                 },
               },
               {
                 type: 'image',
                 source: {
-                  type: 'url',
-                  url: watcherEvidenceUrl,
+                  type: 'base64',
+                  media_type: await getImageMediaType(watcherEvidenceUrl),
+                  data: await fetchImageAsBase64(watcherEvidenceUrl),
                 },
               },
             ],
@@ -892,7 +931,7 @@ router.post('/call/request-followup', async (req, res) => {
     }
 
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + NO_CONTACT_WINDOW_MS); // 3 min
+    const expiresAt = new Date(now.getTime() + FOLLOWUP_WINDOW_MS); // 10 min
 
     const { data: followup } = await supabase.from('followup_requests').insert([{
       payment_id: paymentId,
@@ -938,11 +977,11 @@ router.post('/call/accept-followup', async (req, res) => {
       .single();
 
     if (!followup) return res.status(404).json({ error: 'Follow-up not found' });
-    if (followup.status !== 'pending') return res.status(400).json({ error: 'Follow-up already responded to' });
-    if (new Date() > new Date(followup.expires_at)) {
-      await supabase.from('followup_requests').update({ status: 'expired' }).eq('id', followupId);
-      return res.status(400).json({ error: 'Follow-up request expired' });
-    }
+if (followup.watcher_id !== watcherId) {
+  return res.status(403).json({ error: 'Unauthorized' });
+}
+if (followup.status !== 'pending') return res.status(400).json({ error: 'Follow-up already responded to' });
+if (new Date() > new Date(followup.expires_at)) {
 
     if (accepted) {
       // Reset payment to confirmed state, reveal contact again
@@ -1024,13 +1063,14 @@ router.get('/call/check-expired', async (req, res) => {
     }
 
     // Auto-resolve disputes where host never submitted evidence (timeout)
-    const evidenceDeadline = new Date(Date.now() - EVIDENCE_WINDOW_MS).toISOString();
-    const { data: staleDisputes } = await supabase
-      .from('disputes')
-      .select('id')
-      .eq('status', 'open')
-      .is('host_evidence_url', null)
-      .lt('opened_at', evidenceDeadline);
+    // Auto-resolve disputes where host never submitted evidence (timeout)
+const now2 = new Date().toISOString();
+const { data: staleDisputes } = await supabase
+  .from('disputes')
+  .select('id')
+  .eq('status', 'open')
+  .is('host_evidence_url', null)
+  .lt('host_evidence_deadline', now2);
 
     if (staleDisputes?.length) {
       for (const d of staleDisputes) {

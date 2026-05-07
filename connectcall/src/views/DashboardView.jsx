@@ -33,7 +33,12 @@ export function DashboardView({
   const hostRefundReqs = refundReqs.filter(r => r.status === "pending_host" && myPay.some(p => p.id === r.payment_id));
 
   const liveReqs = myPay.filter(p => {
-    if (p.status === "disputed") return true; // NEW: show disputed payments in live
+    if (p.status === "disputed") {
+      // Only show in live if dispute is still unresolved
+      const dispute = disputes.find(d => d.payment_id === p.id);
+      if (dispute?.status === "resolved_host" || dispute?.status === "resolved_watcher") return false;
+      return true;
+    }
     if (p.status === "pending" || p.status === "confirmed") {
       const conf = (callConfirmations || []).find(cc => cc.payment_id === p.id);
       if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return false;
@@ -85,7 +90,8 @@ export function DashboardView({
           </div>
         )}
         {/* Show upload button if host needs to submit evidence */}
-        {dispute?.status === "open" && !dispute?.host_evidence_url && (
+        {dispute?.status === "open" && !dispute?.host_evidence_url && 
+         !["resolved_host","resolved_watcher","escalated_admin"].includes(dispute?.status) && (
           <div>
             <div style={{ fontSize: 12, color: c.sub, marginBottom: 8 }}>
               Upload a screenshot of your call log showing the outgoing call to {payment?.watcher_contact || "the watcher"}. You have 20 minutes.
@@ -319,7 +325,7 @@ export function DashboardView({
                             {followup && <FollowupBanner followup={followup} />}
 
                             {/* ── CANCELLED: Show follow-up request button ── */}
-                            {isCancelled && !followup && (
+                            {isCancelled && !followup && !dispute && (
                               <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginTop: 8 }}>
                                 <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>
                                   🔄 Missed the call window?

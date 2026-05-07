@@ -72,7 +72,7 @@ export function WatcherDashboardView({
     const statusLabels = {
       open:              { icon: "🔴", text: "Dispute opened — waiting for host evidence", color: c.orange },
       host_evidence:     { icon: "🟡", text: "Host submitted evidence — your turn to respond", color: c.gold },
-      watcher_evidence:  { icon: "🟡", text: "You submitted evidence — awaiting AI review", color: c.gold },
+      watcher_evidence:  { icon: "🟡", text: "Counter-evidence submitted — awaiting AI review", color: c.gold },
       ai_verdict_pending:{ icon: "🤖", text: "AI is reviewing both screenshots…", color: c.blue },
       resolved_host:     { icon: "✅", text: "Resolved in host's favor — payment released", color: c.green },
       resolved_watcher:  { icon: "✅", text: "Resolved in your favor — refund processed", color: c.green },
@@ -95,7 +95,9 @@ export function WatcherDashboardView({
           </div>
         )}
         {/* Show upload button if watcher needs to submit evidence */}
-        {dispute?.status === "host_evidence" && !dispute?.watcher_evidence_url && (
+        {dispute?.status === "host_evidence" && 
+         !dispute?.watcher_evidence_url &&
+         !dispute?.status?.startsWith("resolved") && (
           <EvidenceUploadButton
             disputeId={dispute.id}
             role="watcher"
@@ -193,11 +195,22 @@ export function WatcherDashboardView({
     }
 
     // pending
-    const expiresAt = followup?.expires_at ? new Date(followup.expires_at) : null;
-    const isExpired = expiresAt && new Date() > expiresAt;
+    const [isExpired, setIsExpired] = useState(() => {
+      const expiresAt = followup?.expires_at ? new Date(followup.expires_at) : null;
+      return expiresAt ? new Date() > expiresAt : false;
+    });
+
+    useEffect(() => {
+      const expiresAt = followup?.expires_at ? new Date(followup.expires_at) : null;
+      if (!expiresAt) return;
+      const ms = expiresAt - new Date();
+      if (ms <= 0) { setIsExpired(true); return; }
+      const timer = setTimeout(() => setIsExpired(true), ms);
+      return () => clearTimeout(timer);
+    }, [followup?.expires_at]);
 
     if (isExpired) return null;
-
+    
     return (
       <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginBottom: 8 }}>
         <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>
