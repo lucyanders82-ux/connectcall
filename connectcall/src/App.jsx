@@ -1037,7 +1037,7 @@ const newUser = normaliseUser(result.user);
       {view==="browse" && <BrowseView users={users} payments={payments} onInitiatePayment={handleInitiatePayment} currentUser={currentUser} toast={toast} verifyPrompts={verifyPrompts} onAnswerVerify={handleAnswerVerify} setView={setView} refundReqs={refundReqs} onRefundRequest={handleRefundRequest} onHostApproveRefund={handleHostApproveRefund} pendingHost={pendingHost} setPendingHost={setPendingHost} callConfirmations={callConfirmations} onConfirmCall={handleConfirmCall} favorites={favorites} toggleFavorite={toggleFavorite} />}
       {view==="dashboard" && currentUser && currentUser.role==="host" && <DashboardView user={currentUser} users={users} payments={payments} calls={calls} verifyPrompts={verifyPrompts} onMarkDone={handleMarkDone} onUpdate={handleUpdateUser} onAnswerVerify={handleAnswerVerify} toast={toast} setView={setView} refundReqs={refundReqs} onHostApproveRefund={handleHostApproveRefund} callConfirmations={callConfirmations} />}
       {view==="dashboard" && currentUser && currentUser.role==="watcher" && <WatcherDashboardView user={currentUser} users={users} payments={payments} refundReqs={refundReqs} onRefundRequest={handleRefundRequest} toast={toast} setView={setView} callConfirmations={callConfirmations} onConfirmCall={handleConfirmCall} favorites={favorites} toggleFavorite={toggleFavorite} />}
-      {view==="admin"       && isAdmin && <AdminView users={users} payments={payments} calls={calls} wallet={adminWallet} verifyPrompts={verifyPrompts} onRelease={handleRelease} reports={reports} onPushVerify={handlePushVerify} setView={setView} confirmPayment={confirmPayment} refundReqs={refundReqs} callConfirmations={callConfirmations} onApproveRefund={handleApproveRefund} onDenyRefund={handleDenyRefund} />}
+      {view==="admin"       && isAdmin && <AdminView users={users} payments={payments} calls={calls} wallet={adminWallet} verifyPrompts={verifyPrompts} onRelease={handleRelease} reports={reports} onPushVerify={handlePushVerify} setView={setView} confirmPayment={confirmPayment} refundReqs={refundReqs} callConfirmations={callConfirmations} onApproveRefund={handleApproveRefund} onDenyRefund={handleDenyRefund} toast={toast} />}
     </>
   );
 }
@@ -2536,7 +2536,61 @@ function AdminRefundActions({ r, onApproveRefund, onDenyRefund }) {
   );
 }
 
-function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, reports, onPushVerify, setView, confirmPayment, refundReqs, callConfirmations, onApproveRefund, onDenyRefund }) {
+function WithdrawBtn({ wallet, adminToken, toast }) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const platformRevenue = payments => {
+    return null;
+  };
+
+  const submit = async () => {
+    const n = parseFloat(amount);
+    if (!n || n < 1) { toast("Enter a valid amount", "error"); return; }
+    if (n > wallet) { toast("Amount exceeds escrow balance", "error"); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": adminToken },
+        body: JSON.stringify({ amount: n }),
+      });
+      const data = await res.json();
+      if (!data.success) { toast(data.error || "Withdrawal failed", "error"); return; }
+      toast(`Withdrawal initiated — ${data.transferCode} ✦`);
+      setOpen(false);
+      setAmount("");
+    } catch (err) {
+      toast("Network error", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Btn small variant="green" onClick={()=>setOpen(true)}>💸 Withdraw</Btn>
+      {open && (
+        <Modal onClose={()=>setOpen(false)} title="Withdraw Revenue">
+          <div style={{ marginBottom:16, padding:"12px 14px", borderRadius:10, background:`${c.green}10`, border:`1px solid ${c.green}30` }}>
+            <div style={{ fontSize:12, color:c.sub, marginBottom:2 }}>Available escrow balance</div>
+            <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:28, color:c.green, fontWeight:600 }}>{S}{Number(wallet).toFixed(2)}</div>
+          </div>
+          <Field label="Amount to withdraw (GHS)" value={amount} onChange={setAmount} type="number" hint="Sent to your configured MoMo number" />
+          <div style={{ display:"flex", gap:10, marginTop:8 }}>
+            <Btn variant="surface" onClick={()=>setOpen(false)} small>Cancel</Btn>
+            <Btn variant="green" onClick={submit} full disabled={busy}>
+              {busy ? "Processing…" : `Withdraw ${S}${amount||"0"} →`}
+            </Btn>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, reports, onPushVerify, setView, confirmPayment, refundReqs, callConfirmations, onApproveRefund, onDenyRefund, toast }) {
   const [tab, setTab] = useState("overview");
   const [showPayHistory, setShowPayHistory] = useState(false);
   const [showCallHistory, setShowCallHistory] = useState(false);
@@ -2643,6 +2697,7 @@ function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, r
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
               <div style={{ fontFamily:"'Playfair Display',serif", fontSize:20 }}>Platform Overview</div>
               <Btn small variant="ghost" onClick={exportCSV}>📥 Export CSV</Btn>
+            <WithdrawBtn wallet={wallet} adminToken={ADMIN_TOKEN} toast={toast} />
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:12, marginBottom:24 }}>
               {[
