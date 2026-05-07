@@ -218,7 +218,7 @@ function HostResponseRate({ hostId }) {
       .then(r => r.json())
       .then(d => { if (d.rate !== null) setData(d); });
   }, [hostId]);
-  if (!data || data.total < 3) return null;
+  if (!data || data.total < 1) return null;
   const color = data.rate >= 80 ? c.green : data.rate >= 50 ? c.orange : c.red;
   return (
     <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:6 }}>
@@ -849,6 +849,7 @@ const newUser = normaliseUser(result.user);
   localStorage.setItem("isAdmin", "false");
   await supabase.from("users").update({ online: true }).eq("id", user.id);
   toast(`Welcome back, ${user.name.split(" ")[0]} ✦`);
+  if (user.role === "host" && Notification.permission === "default") Notification.requestPermission();
 };
 
   const handleUpdateUser = async (formData) => {
@@ -1637,8 +1638,8 @@ function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone
                                     conf?.status==="confirmed"||conf?.status==="auto_confirmed"?c.green:c.sub
                                   }}>
                                     {pay.status==="completed"||conf?.status==="confirmed"||conf?.status==="auto_confirmed"?"✅ Done":
-                                     pay.status==="refunded"?"↩ Refunded":
-                                     pay.status==="refunded_partial"?"↩ Partial Refund":"Done"}
+                                   pay.status==="refunded"?"❌ Cancelled — refunded":
+                                   pay.status==="refunded_partial"?"↩ Partial Refund":"Done"}
                                   </div>
                                 </div>
                               </div>
@@ -2384,10 +2385,13 @@ const canDispute = myConf?.status==="pending" && !isDone && !myRefund;
 )}
 {p.status==="confirmed" && !myRefund && !myConf && !isDone && secondsLeft===0 && (
   <div style={{ padding:"12px 14px", borderRadius:10, background:`${c.blue}15`, border:`1px solid ${c.blue}40`, marginTop:8 }}>
-    <div style={{ fontWeight:600, fontSize:13, color:c.blue, marginBottom:4 }}>⏱ Contact window closed</div>
-    <div style={{ fontSize:12, color:c.sub, lineHeight:1.6 }}>
-      Your payment is secured with the host. You'll be prompted to confirm once the call is complete — the host has 24 hours.
+    <div style={{ fontWeight:600, fontSize:13, color:c.blue, marginBottom:6 }}>⏱ Contact window closed</div>
+    <div style={{ fontSize:12, color:c.sub, lineHeight:1.6, marginBottom:10 }}>
+      The 3-minute window has passed. If the host never contacted you, you can request a refund — admin will review within 24 hours.
     </div>
+    <Btn small variant="orange" disabled={refunding} onClick={async()=>{ setRefunding(true); await onRefundRequest(p.id, "Host did not contact watcher after contact window closed"); setRefunding(false); }} full>
+      {refunding ? "Requesting…" : "↩ Request Refund — host didn't contact me"}
+    </Btn>
   </div>
 )}
     {canDispute && (
