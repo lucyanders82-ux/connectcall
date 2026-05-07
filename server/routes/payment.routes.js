@@ -1069,11 +1069,12 @@ router.get('/call/check-expired', async (req, res) => {
     // Auto-resolve disputes where host never submitted evidence (timeout)
 const now2 = new Date().toISOString();
 const { data: staleDisputes } = await supabase
-  .from('disputes')
-  .select('id')
-  .eq('status', 'open')
-  .is('host_evidence_url', null)
-  .lt('host_evidence_deadline', now2);
+      .from('disputes')
+      .select('id')
+      .eq('status', 'open')
+      .is('host_evidence_url', null)
+      .not('host_evidence_deadline', 'is', null)
+      .lt('host_evidence_deadline', now2);
 
     if (staleDisputes?.length) {
       for (const d of staleDisputes) {
