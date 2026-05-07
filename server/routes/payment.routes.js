@@ -11,6 +11,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Window (ms) during which watcher can claim "host didn't contact me"
 const NO_CONTACT_WINDOW_MS = 3 * 60 * 1000; // 3 minutes
+const EVIDENCE_WINDOW_MS = 20 * 60 * 1000; // 20 minutes per side
 
 async function paystackRequest(method, path, body) {
   const res = await fetch(`https://api.paystack.co${path}`, {
@@ -176,10 +177,11 @@ router.get('/verify/:reference', async (req, res) => {
 });
 
 // POST /api/pay/watcher/refund
-// Handles three cases:
-//   1. status=pending (not confirmed)  → 70% auto-refund
-//   2. no_contact within 3-min window  → cancel booking, 70% refund, notify host
-//   3. dispute after host marks done   → admin review
+// Handles four cases:
+//   1. status=pending (not confirmed)           → 70% auto-refund
+//   2. no_contact within 3-min, host NOT marked done → 70% auto-refund (existing logic)
+//   3. no_contact within 3-min, host ALREADY marked done → Open dispute with evidence window
+//   4. dispute after host marks done             → admin review
 router.post('/watcher/refund', async (req, res) => {
   try {
     const { paymentId, reason, watcherId } = req.body;
@@ -211,14 +213,14 @@ router.post('/watcher/refund', async (req, res) => {
       return await handleEarlyCancel(pay, reason, watcherId, res);
     }
 
-    // ── Case 2: Contact revealed but host didn't reach out within 3-min window ──
+    // ── Case 2 & 3: Contact revealed + "host didn't contact me" claim ──
     if (pay.status === 'confirmed' && isNoContactClaim) {
       const revealedAt = pay.contact_revealed_at ? new Date(pay.contact_revealed_at) : null;
       const now = new Date();
 
       if (!revealedAt) {
-        // No timestamp stored — allow the claim but treat as admin review
-        return await handleNoContactClaim(pay, reason, watcherId, res);
+        // No timestamp stored — fall back to dispute flow
+        return await handleNoContactWithDisputeCheck(pay, reason, watcherId, res);
       }
 
       const msSinceReveal = now - revealedAt;
@@ -229,10 +231,11 @@ router.post('/watcher/refund', async (req, res) => {
         });
       }
 
-      return await handleNoContactClaim(pay, reason, watcherId, res);
+      // Check if host has already marked the call as done
+      return await handleNoContactWithDisputeCheck(pay, reason, watcherId, res);
     }
 
-    // ── Case 3: Watcher disputes after host marks call done ──
+    // ── Case 4: Watcher disputes after host marks call done ──
     if (isDispute) {
       const { data: conf } = await supabase
         .from('call_confirmations')
@@ -329,6 +332,8 @@ async function handleEarlyCancel(pay, reason, watcherId, res) {
     refund_amount: refundAmount,
     refund_type: 'auto_70_percent',
     resolved_at: new Date().toISOString(),
+    auto_refunded: true,
+    refund_percentage: EARLY_REFUND_PCT,
   }]);
 
   // Notify host that booking was cancelled
@@ -351,7 +356,99 @@ async function handleEarlyCancel(pay, reason, watcherId, res) {
   });
 }
 
-// ── Helper: "Host didn't contact me" within 3-min window ──
+// ── NEW: Check if host marked done BEFORE processing no-contact claim ──
+async function handleNoContactWithDisputeCheck(pay, reason, watcherId, res) {
+  // Check if host has already marked the call as done
+  const { data: callConfirmation } = await supabase
+    .from('call_confirmations')
+    .select('id, status, created_at')
+    .eq('payment_id', pay.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  const hostMarkedDone = callConfirmation && callConfirmation.status !== 'pending';
+
+  if (hostMarkedDone) {
+    // ── NEW FLOW: Host claims call happened → open dispute with evidence ──
+    return await openDisputeWithEvidence(pay, reason, watcherId, callConfirmation, res);
+  } else {
+    // ── EXISTING FLOW: Host never marked done → 70% auto-refund ──
+    return await handleNoContactClaim(pay, reason, watcherId, res);
+  }
+}
+
+// ── NEW: Open a dispute thread when host marked done but watcher says no call ──
+async function openDisputeWithEvidence(pay, reason, watcherId, callConfirmation, res) {
+  const now = new Date();
+  const hostEvidenceDeadline = new Date(now.getTime() + EVIDENCE_WINDOW_MS);
+
+  // Create refund request (pending, not auto-approved)
+  const { data: refundReq } = await supabase.from('refund_requests').insert([{
+    payment_id: pay.id,
+    reason: reason || 'Host marked call done but watcher claims no contact',
+    status: 'pending',
+    watcher_id: watcherId || pay.watcher_id,
+    watcher_name: pay.watcher_name,
+    refund_type: 'dispute_evidence',
+    auto_refunded: false,
+  }]).select().single();
+
+  // Create dispute record
+  const { data: dispute } = await supabase.from('disputes').insert([{
+    payment_id: pay.id,
+    refund_request_id: refundReq?.id,
+    status: 'open',
+    opened_by: 'watcher',
+    opened_reason: reason || 'Watcher claims host did not call despite marking done',
+  }]).select().single();
+
+  // Link dispute to refund request
+  if (refundReq?.id && dispute?.id) {
+    await supabase.from('refund_requests')
+      .update({ dispute_id: dispute.id })
+      .eq('id', refundReq.id);
+  }
+
+  // Add system message to dispute chat
+  await supabase.from('dispute_messages').insert([{
+    dispute_id: dispute.id,
+    sender_role: 'system',
+    message: `Dispute opened. Host has 20 minutes to submit evidence (screenshot of call log showing call to ${pay.watcher_contact}). If host fails to submit evidence, refund will be processed automatically.`,
+  }]);
+
+  // Freeze payment — don't release to host
+  await supabase.from('payments').update({ status: 'disputed' }).eq('id', pay.id);
+
+  // Notify host about the dispute
+  try {
+    const { data: host } = await supabase
+      .from('users')
+      .select('contact_number, name')
+      .eq('id', pay.target_user_id)
+      .single();
+
+    if (host?.contact_number) {
+      const { notifyHostDisputeOpened } = await import('../services/notification.service.js');
+      await notifyHostDisputeOpened(host.contact_number, pay.watcher_name, hostEvidenceDeadline);
+    }
+  } catch (e) {
+    console.error('[Dispute] Notify host failed (non-fatal):', e.message);
+  }
+
+  console.log(`[Dispute] Opened — payment ${pay.id}, host marked done, watcher disputes`);
+
+  return res.json({
+    success: true,
+    autoRefunded: false,
+    disputeOpened: true,
+    disputeId: dispute.id,
+    message: 'Host marked the call as done. A dispute has been opened. The host has 20 minutes to submit evidence of the call.',
+    hostEvidenceDeadline: hostEvidenceDeadline.toISOString(),
+  });
+}
+
+// ── Existing: "Host didn't contact me" within 3-min window (host never marked done) ──
 async function handleNoContactClaim(pay, reason, watcherId, res) {
   const totalPaid = parseFloat(pay.total_charged || pay.amount);
   const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
@@ -379,6 +476,8 @@ async function handleNoContactClaim(pay, reason, watcherId, res) {
     refund_amount: refundAmount,
     refund_type: 'no_contact_window',
     resolved_at: new Date().toISOString(),
+    auto_refunded: true,
+    refund_percentage: EARLY_REFUND_PCT,
   }]);
 
   // Notify host their booking was cancelled
@@ -401,5 +500,555 @@ async function handleNoContactClaim(pay, reason, watcherId, res) {
     message: `Booking cancelled — host did not contact you in time. GHS ${refundAmount} (70%) refunded.`,
   });
 }
+
+// ─────────────────────────────────────────────────────
+// NEW ROUTES: Dispute evidence & follow-up
+// ─────────────────────────────────────────────────────
+
+// POST /api/pay/dispute/submit-evidence
+// Host or watcher uploads screenshot evidence
+router.post('/dispute/submit-evidence', async (req, res) => {
+  try {
+    const { disputeId, userId, role, evidenceUrl } = req.body;
+
+    if (!disputeId || !userId || !role || !evidenceUrl) {
+      return res.status(400).json({ error: 'disputeId, userId, role, and evidenceUrl are required' });
+    }
+
+    if (!['host', 'watcher'].includes(role)) {
+      return res.status(400).json({ error: 'role must be "host" or "watcher"' });
+    }
+
+    const { data: dispute } = await supabase
+      .from('disputes')
+      .select('*')
+      .eq('id', disputeId)
+      .single();
+
+    if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+    if (dispute.status === 'resolved_host' || dispute.status === 'resolved_watcher') {
+      return res.status(400).json({ error: 'Dispute already resolved' });
+    }
+
+    const now = new Date().toISOString();
+
+    if (role === 'host') {
+      // Prevent duplicate host evidence
+      if (dispute.host_evidence_url) {
+        return res.status(400).json({ error: 'Host evidence already submitted' });
+      }
+
+      await supabase.from('disputes').update({
+        host_evidence_url: evidenceUrl,
+        host_evidence_submitted_at: now,
+        status: 'watcher_evidence', // Move to watcher's turn
+      }).eq('id', disputeId);
+
+      // System message
+      await supabase.from('dispute_messages').insert([{
+        dispute_id: disputeId,
+        sender_role: 'system',
+        message: `Host submitted evidence. Watcher now has 20 minutes to submit counter-evidence (screenshot showing NO call from host's number during the booked window).`,
+      }]);
+
+      // Notify watcher
+      try {
+        const { data: payment } = await supabase.from('payments').select('watcher_contact, watcher_id').eq('id', dispute.payment_id).single();
+        if (payment?.watcher_contact) {
+          const { notifyWatcherCounterEvidence } = await import('../services/notification.service.js');
+          await notifyWatcherCounterEvidence(payment.watcher_contact);
+        }
+      } catch (e) {
+        console.error('[Evidence] Notify watcher failed:', e.message);
+      }
+
+      return res.json({
+        success: true,
+        message: 'Evidence submitted. Watcher has 20 minutes to respond.',
+        nextStep: 'watcher_evidence',
+      });
+    }
+
+    if (role === 'watcher') {
+      // Prevent duplicate watcher evidence
+      if (dispute.watcher_evidence_url) {
+        return res.status(400).json({ error: 'Watcher evidence already submitted' });
+      }
+
+      await supabase.from('disputes').update({
+        watcher_evidence_url: evidenceUrl,
+        watcher_evidence_submitted_at: now,
+        status: 'ai_verdict_pending',
+      }).eq('id', disputeId);
+
+      // System message
+      await supabase.from('dispute_messages').insert([{
+        dispute_id: disputeId,
+        sender_role: 'system',
+        message: 'Watcher submitted counter-evidence. AI analysis will now review both screenshots.',
+      }]);
+
+      // Trigger AI verdict (async — we respond immediately)
+      triggerAIVerdict(disputeId).catch(e => {
+        console.error('[AI Verdict] Async trigger failed:', e.message);
+      });
+
+      return res.json({
+        success: true,
+        message: 'Counter-evidence submitted. AI review in progress.',
+        nextStep: 'ai_verdict',
+      });
+    }
+
+  } catch (err) {
+    console.error('[SubmitEvidence] Exception:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/pay/dispute/ai-verdict (can also be called by admin manually)
+router.post('/dispute/ai-verdict', async (req, res) => {
+  try {
+    const { disputeId } = req.body;
+    if (!disputeId) return res.status(400).json({ error: 'disputeId is required' });
+
+    const result = await triggerAIVerdict(disputeId);
+    return res.json(result);
+  } catch (err) {
+    console.error('[AIVerdict] Exception:', err);
+    res.status(500).json({ error: 'AI verdict failed', details: err.message });
+  }
+});
+
+// GET /api/pay/dispute/:id — fetch dispute details for UI
+router.get('/dispute/:id', async (req, res) => {
+  try {
+    const { data: dispute } = await supabase
+      .from('disputes')
+      .select('*, dispute_messages(*)')
+      .eq('id', req.params.id)
+      .single();
+
+    if (!dispute) return res.status(404).json({ error: 'Dispute not found' });
+
+    return res.json({ dispute });
+  } catch (err) {
+    console.error('[GetDispute] Exception:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── AI Verdict Engine ──
+async function triggerAIVerdict(disputeId) {
+  const { data: dispute } = await supabase
+    .from('disputes')
+    .select('*')
+    .eq('id', disputeId)
+    .single();
+
+  if (!dispute) throw new Error('Dispute not found');
+  if (!dispute.host_evidence_url || !dispute.watcher_evidence_url) {
+    throw new Error('Both parties must submit evidence before AI review');
+  }
+
+  // TODO: Integrate Claude Vision API or GPT-4V here
+  // For now, use a placeholder that flags for admin review
+  const aiResult = await analyzeEvidenceWithAI(
+    dispute.host_evidence_url,
+    dispute.watcher_evidence_url
+  );
+
+  const now = new Date().toISOString();
+
+  await supabase.from('disputes').update({
+    ai_verdict: aiResult.verdict,
+    ai_confidence: aiResult.confidence,
+    ai_analysis: aiResult.analysis,
+    status: aiResult.confidence >= 85 ? 
+      (aiResult.verdict === 'host' ? 'resolved_host' : 'resolved_watcher') : 
+      'escalated_admin',
+    resolved_at: aiResult.confidence >= 85 ? now : null,
+    resolved_by: aiResult.confidence >= 85 ? 'ai' : null,
+  }).eq('id', disputeId);
+
+  // System message
+  const verdictMessage = aiResult.confidence >= 85
+    ? `AI verdict: Ruled in favor of ${aiResult.verdict === 'host' ? 'HOST' : 'WATCHER'} (${aiResult.confidence}% confidence). ${aiResult.analysis}`
+    : `AI could not reach a confident verdict (${aiResult.confidence}% confidence). Escalated to admin for manual review.`;
+
+  await supabase.from('dispute_messages').insert([{
+    dispute_id: disputeId,
+    sender_role: 'system',
+    message: verdictMessage,
+  }]);
+
+  // If auto-resolved, process the outcome
+  if (aiResult.confidence >= 85) {
+    await resolveDisputeOutcome(disputeId, aiResult.verdict);
+  }
+
+  return { verdict: aiResult.verdict, confidence: aiResult.confidence, autoResolved: aiResult.confidence >= 85 };
+}
+
+// ── Placeholder AI analysis — replace with actual Claude/GPT Vision call ──
+// ── Real Claude Vision AI analysis ──
+async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
+  const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+
+  if (!CLAUDE_API_KEY) {
+    console.warn('[AI] No CLAUDE_API_KEY set — falling back to placeholder');
+    return {
+      verdict: 'inconclusive',
+      confidence: 50,
+      analysis: 'AI not configured. Both screenshots received — manual admin review required.',
+    };
+  }
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-3-opus-20240229',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `You are an impartial dispute arbitrator for ConnectCall, a platform where watchers pay hosts for phone/video consultations.
+
+A dispute has been filed: The HOST claims they called the watcher and completed the consultation. The WATCHER claims no call was received.
+
+You are shown two screenshots:
+- Image 1: The HOST's call log, which should show an OUTGOING call to the watcher's number
+- Image 2: The WATCHER's call log, which should show NO INCOMING call from the host's number during the booked window
+
+Analyze both screenshots carefully:
+1. Check if Image 1 shows a genuine outgoing call with duration >= 2 minutes
+2. Check if Image 2 genuinely shows no incoming call from the host's number in the same timeframe
+3. Look for signs of editing: inconsistent fonts, misaligned UI elements, odd timestamps, cropped edges
+
+Return ONLY a JSON object (no other text) in this exact format:
+{
+  "verdict": "host" | "watcher" | "inconclusive",
+  "confidence": 0-100,
+  "analysis": "Brief explanation of what you observed in both screenshots and why you reached this conclusion. 2-3 sentences max."
+}
+
+RULES:
+- verdict "host" = Image 1 is convincing and Image 2 is absent/weak -> host wins
+- verdict "watcher" = Image 1 is weak/absent and Image 2 convincingly shows no call -> watcher wins
+- verdict "inconclusive" = evidence is contradictory, unreadable, or both sides are equally convincing
+- confidence >= 85 only if the evidence is VERY clear (obvious genuine screenshot on one side, obvious absence/fake on other)
+- If you detect likely editing/fakery, note it in analysis and reduce confidence significantly`,
+              },
+              {
+                type: 'image',
+                source: {
+                  type: 'url',
+                  url: hostEvidenceUrl,
+                },
+              },
+              {
+                type: 'image',
+                source: {
+                  type: 'url',
+                  url: watcherEvidenceUrl,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!data.content || !data.content[0]?.text) {
+      console.error('[AI] Unexpected Claude response:', JSON.stringify(data).substring(0, 500));
+      return { verdict: 'inconclusive', confidence: 50, analysis: 'AI failed to analyze screenshots — unexpected response format.' };
+    }
+
+    const text = data.content[0].text.trim();
+
+    // Extract JSON from response (handle cases where Claude adds markdown)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error('[AI] Could not parse JSON from Claude response:', text.substring(0, 300));
+      return { verdict: 'inconclusive', confidence: 50, analysis: 'AI response could not be parsed as JSON.' };
+    }
+
+    const result = JSON.parse(jsonMatch[0]);
+
+    // Validate the response
+    if (!['host', 'watcher', 'inconclusive'].includes(result.verdict)) {
+      result.verdict = 'inconclusive';
+    }
+    result.confidence = Math.max(0, Math.min(100, Math.round(result.confidence || 50)));
+    result.analysis = result.analysis || 'No analysis provided.';
+
+    console.log(`[AI] Verdict: ${result.verdict}, Confidence: ${result.confidence}%`);
+    return result;
+
+  } catch (err) {
+    console.error('[AI] Claude API error:', err.message);
+    return {
+      verdict: 'inconclusive',
+      confidence: 50,
+      analysis: `AI analysis failed: ${err.message}. Manual admin review required.`,
+    };
+  }
+}
+
+// ── Resolve dispute outcome ──
+async function resolveDisputeOutcome(disputeId, verdict) {
+  const { data: dispute } = await supabase
+    .from('disputes')
+    .select('*, payment:payment_id(*)')
+    .eq('id', disputeId)
+    .single();
+
+  if (!dispute) return;
+
+  const payment = dispute.payment;
+  const totalPaid = parseFloat(payment.total_charged || payment.amount);
+  const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
+
+  if (verdict === 'watcher') {
+    // Refund watcher
+    if (payment.paystack_ref) {
+      try {
+        await paystackRequest('POST', '/refund', {
+          transaction: payment.paystack_ref,
+          amount: Math.round(refundAmount * 100),
+        });
+      } catch (e) {
+        console.error('[ResolveDispute] Refund failed:', e.message);
+      }
+    }
+
+    await supabase.from('payments').update({ status: 'refunded_partial' }).eq('id', payment.id);
+    await supabase.from('refund_requests').update({
+      status: 'approved',
+      refund_amount: refundAmount,
+      resolved_at: new Date().toISOString(),
+      auto_refunded: true,
+      refund_percentage: EARLY_REFUND_PCT,
+    }).eq('dispute_id', disputeId);
+
+  } else if (verdict === 'host') {
+    // Release payment to host
+    await supabase.from('payments').update({ status: 'completed' }).eq('id', payment.id);
+    await supabase.from('refund_requests').update({
+      status: 'rejected',
+      resolved_at: new Date().toISOString(),
+    }).eq('dispute_id', disputeId);
+
+    // Trigger payout
+    try {
+      const { processHostPayout } = await import('../services/payment.service.js');
+      await processHostPayout(payment);
+    } catch (e) {
+      console.error('[ResolveDispute] Payout failed:', e.message);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────
+// FOLLOW-UP REQUESTS (when host misses the window)
+// ─────────────────────────────────────────────────────
+
+// POST /api/pay/call/request-followup — Host requests retry after cancellation
+router.post('/call/request-followup', async (req, res) => {
+  try {
+    const { paymentId, hostId } = req.body;
+    if (!paymentId || !hostId) return res.status(400).json({ error: 'paymentId and hostId are required' });
+
+    const { data: payment } = await supabase.from('payments').select('*').eq('id', paymentId).single();
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+
+    // Only allow follow-up if payment was refunded/cancelled due to no-contact
+    if (payment.status !== 'refunded_partial') {
+      return res.status(400).json({ error: 'Follow-up only available for cancelled bookings' });
+    }
+
+    // Check for existing follow-up
+    const { data: existing } = await supabase
+      .from('followup_requests')
+      .select('id, status')
+      .eq('payment_id', paymentId)
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (existing && ['pending', 'accepted'].includes(existing.status)) {
+      return res.status(400).json({ error: 'A follow-up request already exists' });
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + NO_CONTACT_WINDOW_MS); // 3 min
+
+    const { data: followup } = await supabase.from('followup_requests').insert([{
+      payment_id: paymentId,
+      host_id: hostId,
+      watcher_id: payment.watcher_id,
+      status: 'pending',
+      expires_at: expiresAt.toISOString(),
+    }]).select().single();
+
+    // Notify watcher
+    try {
+      const { data: watcher } = await supabase.from('users').select('contact_number').eq('id', payment.watcher_id).single();
+      if (watcher?.contact_number) {
+        const { notifyFollowupRequest } = await import('../services/notification.service.js');
+        await notifyFollowupRequest(watcher.contact_number, payment.watcher_name || 'User');
+      }
+    } catch (e) {
+      console.error('[Followup] Notify failed:', e.message);
+    }
+
+    return res.json({
+      success: true,
+      followupId: followup.id,
+      expiresAt: expiresAt.toISOString(),
+      message: 'Follow-up request sent to watcher. They have 3 minutes to accept.',
+    });
+  } catch (err) {
+    console.error('[Followup] Exception:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/pay/call/accept-followup — Watcher accepts follow-up
+router.post('/call/accept-followup', async (req, res) => {
+  try {
+    const { followupId, watcherId, accepted } = req.body;
+    if (!followupId || !watcherId) return res.status(400).json({ error: 'followupId and watcherId are required' });
+
+    const { data: followup } = await supabase
+      .from('followup_requests')
+      .select('*, payment:payment_id(*)')
+      .eq('id', followupId)
+      .single();
+
+    if (!followup) return res.status(404).json({ error: 'Follow-up not found' });
+    if (followup.status !== 'pending') return res.status(400).json({ error: 'Follow-up already responded to' });
+    if (new Date() > new Date(followup.expires_at)) {
+      await supabase.from('followup_requests').update({ status: 'expired' }).eq('id', followupId);
+      return res.status(400).json({ error: 'Follow-up request expired' });
+    }
+
+    if (accepted) {
+      // Reset payment to confirmed state, reveal contact again
+      const contactRevealedAt = new Date().toISOString();
+      await supabase.from('payments').update({
+        status: 'confirmed',
+        contact_revealed_at: contactRevealedAt,
+        confirmed_at: contactRevealedAt,
+      }).eq('id', followup.payment_id);
+
+      await supabase.from('followup_requests').update({
+        status: 'accepted',
+        responded_at: new Date().toISOString(),
+      }).eq('id', followupId);
+
+      return res.json({
+        success: true,
+        accepted: true,
+        message: 'Follow-up accepted. Contact re-revealed. New 3-minute window started.',
+        contactRevealedAt,
+      });
+    } else {
+      // Watcher declined — finalize refund
+      await supabase.from('followup_requests').update({
+        status: 'declined',
+        responded_at: new Date().toISOString(),
+      }).eq('id', followupId);
+
+      return res.json({
+        success: true,
+        accepted: false,
+        message: 'Follow-up declined. Refund is final.',
+      });
+    }
+  } catch (err) {
+    console.error('[AcceptFollowup] Exception:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/pay/call/check-expired — Check and expire stale windows (cron or polling)
+router.get('/call/check-expired', async (req, res) => {
+  try {
+    const now = new Date().toISOString();
+
+    // Expire call confirmations past deadline
+    const { data: expiredConfs } = await supabase
+      .from('call_confirmations')
+      .select('id, payment_id')
+      .eq('status', 'pending')
+      .lt('expires_at', now);
+
+    if (expiredConfs?.length) {
+      await supabase.from('call_confirmations')
+        .update({ status: 'expired', responded_at: now })
+        .in('id', expiredConfs.map(c => c.id));
+
+      // Mark payments as cancelled
+      await supabase.from('payments')
+        .update({ status: 'cancelled' })
+        .in('id', expiredConfs.map(c => c.payment_id));
+
+      console.log(`[CheckExpired] Expired ${expiredConfs.length} confirmations`);
+    }
+
+    // Expire follow-up requests
+    const { data: expiredFollowups } = await supabase
+      .from('followup_requests')
+      .select('id')
+      .eq('status', 'pending')
+      .lt('expires_at', now);
+
+    if (expiredFollowups?.length) {
+      await supabase.from('followup_requests')
+        .update({ status: 'expired', responded_at: now })
+        .in('id', expiredFollowups.map(f => f.id));
+
+      console.log(`[CheckExpired] Expired ${expiredFollowups.length} follow-ups`);
+    }
+
+    // Auto-resolve disputes where host never submitted evidence (timeout)
+    const evidenceDeadline = new Date(Date.now() - EVIDENCE_WINDOW_MS).toISOString();
+    const { data: staleDisputes } = await supabase
+      .from('disputes')
+      .select('id')
+      .eq('status', 'open')
+      .is('host_evidence_url', null)
+      .lt('opened_at', evidenceDeadline);
+
+    if (staleDisputes?.length) {
+      for (const d of staleDisputes) {
+        // Host failed to submit evidence → rule in watcher's favor
+        await resolveDisputeOutcome(d.id, 'watcher');
+      }
+      console.log(`[CheckExpired] Auto-resolved ${staleDisputes.length} disputes in watcher's favor`);
+    }
+
+    return res.json({
+      expiredConfirmations: expiredConfs?.length || 0,
+      expiredFollowups: expiredFollowups?.length || 0,
+      resolvedDisputes: staleDisputes?.length || 0,
+    });
+  } catch (err) {
+    console.error('[CheckExpired] Exception:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 export default router;

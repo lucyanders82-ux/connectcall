@@ -69,3 +69,50 @@ export async function notifyPasswordReset(contactNumber, otp, name) {
     console.error('[SMS] Password reset notification failed:', err.message);
   }
 }
+
+// ─────────────────────────────────────────────────────
+// NEW: Dispute & Follow-up Notifications
+// ─────────────────────────────────────────────────────
+
+export async function notifyHostDisputeOpened(hostContact, watcherName, evidenceDeadline) {
+  try {
+    const to = formatGhanaNumber(hostContact);
+    const deadlineMinutes = Math.round((new Date(evidenceDeadline) - new Date()) / 60000);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: ${watcherName} disputes your marked call. You have ${deadlineMinutes} mins to submit call log evidence at connectcall.vercel.app or the refund will be processed.`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Host dispute opened — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Host dispute notification failed:', err.message);
+  }
+}
+
+export async function notifyWatcherCounterEvidence(watcherContact) {
+  try {
+    const to = formatGhanaNumber(watcherContact);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: The host has submitted call evidence. You have 20 mins to upload your counter-evidence (call log screenshot) at connectcall.vercel.app.`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Watcher counter-evidence notified — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Watcher counter-evidence notification failed:', err.message);
+  }
+}
+
+export async function notifyFollowupRequest(watcherContact, hostName) {
+  try {
+    const to = formatGhanaNumber(watcherContact);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: ${hostName} wants to retry your cancelled call. You have 3 mins to accept at connectcall.vercel.app — if you decline, your 70% refund is final.`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Follow-up request notified — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Follow-up notification failed:', err.message);
+  }
+}
