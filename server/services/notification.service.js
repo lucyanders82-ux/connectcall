@@ -55,3 +55,17 @@ export async function notifyHostNewBooking(hostContact, watcherName, platform) {
     console.error('[SMS] Host notification failed:', err.message);
   }
 }
+
+export async function notifyPasswordReset(contactNumber, otp, name) {
+  try {
+    const to = formatGhanaNumber(contactNumber);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: Hi ${name}, your password reset code is ${otp}. It expires in 15 minutes. Do not share this code with anyone.`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Password reset OTP sent — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Password reset notification failed:', err.message);
+  }
+}

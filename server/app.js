@@ -109,6 +109,101 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.post('/api/auth/request-reset', async (req, res) => {
+  try {
+    const { name, contactNumber } = req.body;
+    if (!name || !contactNumber) return res.status(400).json({ error: 'Name and contact number required' });
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('id, name, contact_number, role')
+      .ilike('name', name.trim())
+      .single();
+
+    if (!user) return res.status(404).json({ error: 'No account found with that name' });
+
+    const digits = contactNumber.replace(/\D/g, '');
+    const storedDigits = (user.contact_number || '').replace(/\D/g, '');
+    if (digits !== storedDigits) {
+      return res.status(400).json({ error: 'Contact number does not match our records' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = await bcrypt.hash(otp, 10);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    await supabase.from('password_resets').insert([{
+      user_id: user.id,
+      otp: hashedOtp,
+      expires_at: expiresAt,
+      used: false,
+    }]);
+
+    try {
+      const { notifyPasswordReset } = await import('./services/notification.service.js');
+      await notifyPasswordReset(contactNumber, otp, user.name);
+    } catch (smsErr) {
+      console.error('[RequestReset] SMS failed (non-fatal):', smsErr.message);
+    }
+
+    console.log(`[RequestReset] OTP sent to ${contactNumber} for user ${user.id}`);
+    return res.json({ success: true, message: 'OTP sent via SMS' });
+
+  } catch (err) {
+    console.error('[RequestReset] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/auth/confirm-reset', async (req, res) => {
+  try {
+    const { name, otp, newPassword } = req.body;
+    if (!name || !otp || !newPassword) return res.status(400).json({ error: 'Name, OTP, and new password required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('id')
+      .ilike('name', name.trim())
+      .single();
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { data: resets } = await supabase
+      .from('password_resets')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('used', false)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (!resets || resets.length === 0) {
+      return res.status(400).json({ error: 'No valid OTP found — request a new one' });
+    }
+
+    let matchedReset = null;
+    for (const reset of resets) {
+      const match = await bcrypt.compare(otp, reset.otp);
+      if (match) { matchedReset = reset; break; }
+    }
+
+    if (!matchedReset) return res.status(400).json({ error: 'Incorrect OTP' });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await supabase.from('users').update({ password: hashedPassword }).eq('id', user.id);
+    await supabase.from('password_resets').update({ used: true }).eq('id', matchedReset.id);
+
+    console.log(`[ConfirmReset] Password reset for user ${user.id}`);
+    return res.json({ success: true, message: 'Password reset successfully' });
+
+  } catch (err) {
+    console.error('[ConfirmReset] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { name, password, role, ...rest } = req.body;
@@ -604,6 +699,40 @@ app.post('/api/rate', async (req, res) => {
   }]).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true, rating: data });
+});
+
+app.get('/api/response-rate/:hostId', async (req, res) => {
+  try {
+    const { hostId } = req.params;
+
+    const { data: allPayments } = await supabase
+      .from('payments')
+      .select('id')
+      .eq('target_user_id', hostId)
+      .eq('paystack_verified', true);
+
+    if (!allPayments || allPayments.length === 0) {
+      return res.json({ rate: null, responded: 0, total: 0 });
+    }
+
+    const paymentIds = allPayments.map(p => p.id);
+
+    const { data: responded } = await supabase
+      .from('call_confirmations')
+      .select('id')
+      .in('payment_id', paymentIds)
+      .in('status', ['confirmed', 'auto_confirmed']);
+
+    const total = allPayments.length;
+    const respondedCount = responded?.length || 0;
+    const rate = Math.round((respondedCount / total) * 100);
+
+    return res.json({ rate, responded: respondedCount, total });
+
+  } catch (err) {
+    console.error('[ResponseRate] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.get('/api/rating/:hostId', async (req, res) => {
