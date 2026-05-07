@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { c, S, PAYOUT_PROVIDERS, CURRENCY } from "../constants";
 import { safeArr, normaliseUser } from "../utils";
 import { Btn, Modal, Field, Avatar, Chip, OnlineDot, SectionHeader, PhotoPick, MultiPick } from "../components/UI";
@@ -6,7 +6,15 @@ import { HostRating, HostResponseRate } from "../components/HostRating";
 import { MarkDoneBtn } from "../components/MarkDoneBtn";
 import { HostRefundRow } from "../components/HostRefundRow";
 
-export function DashboardView({ user, users, payments, calls, verifyPrompts, onMarkDone, onUpdate, onAnswerVerify, toast, setView, refundReqs, onHostApproveRefund, callConfirmations }) {
+export function DashboardView({
+  user, users, payments, calls, verifyPrompts, onMarkDone, onUpdate,
+  onAnswerVerify, toast, setView, refundReqs, onHostApproveRefund,
+  callConfirmations,
+  disputes = [],              // NEW
+  followupReqs = [],          // NEW
+  onSubmitEvidence,           // NEW
+  onRequestFollowup,          // NEW
+}) {
   if (user?.role === "watcher") { setView("browse"); return null; }
 
   const [tab, setTab]             = useState("overview");
@@ -15,6 +23,7 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
   const [editStep, setEditStep]   = useState(1);
   const [ef, setEf]               = useState({});
   const [busy, setBusy]           = useState(false);
+  const [requestingFollowup, setRequestingFollowup] = useState({}); // NEW: per-payment loading state
   const eu = k => v => setEf(x => ({ ...x, [k]: v }));
 
   const live    = normaliseUser(users.find(u => u.id === user.id) || user);
@@ -24,7 +33,7 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
   const hostRefundReqs = refundReqs.filter(r => r.status === "pending_host" && myPay.some(p => p.id === r.payment_id));
 
   const liveReqs = myPay.filter(p => {
-    if (p.status === "disputed") return false;
+    if (p.status === "disputed") return true; // NEW: show disputed payments in live
     if (p.status === "pending" || p.status === "confirmed") {
       const conf = (callConfirmations || []).find(cc => cc.payment_id === p.id);
       if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return false;
@@ -35,7 +44,7 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
   });
 
   const closedReqs = myPay.filter(p => {
-    if (p.status === "completed" || p.status === "refunded" || p.status === "refunded_partial" || p.status === "disputed") return true;
+    if (p.status === "completed" || p.status === "refunded" || p.status === "refunded_partial" || p.status === "cancelled") return true;
     const conf = (callConfirmations || []).find(cc => cc.payment_id === p.id);
     if (conf && (conf.status === "confirmed" || conf.status === "auto_confirmed")) return true;
     return false;
@@ -47,6 +56,138 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
   };
 
   const save = async () => { setBusy(true); await onUpdate({ ...ef, id: live.id, tags: safeArr(ef.tags), photos: safeArr(ef.photos) }); setBusy(false); setEditing(false); };
+
+  // ── Dispute Banner for Host ────────────────────────────────────────────────
+  const DisputeBanner = ({ dispute, payment }) => {
+    const statusLabels = {
+      open:              { icon: "🔴", text: "Watcher disputes your call — submit evidence now", color: c.orange },
+      host_evidence:     { icon: "🟡", text: "You submitted evidence — waiting for watcher", color: c.gold },
+      watcher_evidence:  { icon: "🟡", text: "Both sides submitted — awaiting review", color: c.gold },
+      ai_verdict_pending:{ icon: "🤖", text: "AI is reviewing both screenshots…", color: c.blue },
+      resolved_host:     { icon: "✅", text: "Resolved in your favor — payment released", color: c.green },
+      resolved_watcher:  { icon: "❌", text: "Resolved in watcher's favor — refund processed", color: c.red },
+      escalated_admin:   { icon: "⏳", text: "Escalated to admin for manual review", color: c.orange },
+    };
+    const s = statusLabels[dispute?.status] || statusLabels.open;
+
+    return (
+      <div style={{
+        padding: "14px 16px", borderRadius: 12, marginBottom: 12, marginTop: 8,
+        background: `${s.color}15`, border: `2px solid ${s.color}40`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: 20 }}>{s.icon}</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: s.color }}>{s.text}</span>
+        </div>
+        {dispute?.ai_analysis && (
+          <div style={{ fontSize: 12, color: c.sub, marginBottom: 8, lineHeight: 1.5 }}>
+            {dispute.ai_analysis}
+          </div>
+        )}
+        {/* Show upload button if host needs to submit evidence */}
+        {dispute?.status === "open" && !dispute?.host_evidence_url && (
+          <div>
+            <div style={{ fontSize: 12, color: c.sub, marginBottom: 8 }}>
+              Upload a screenshot of your call log showing the outgoing call to {payment?.watcher_contact || "the watcher"}. You have 20 minutes.
+            </div>
+            <HostEvidenceUpload disputeId={dispute.id} />
+          </div>
+        )}
+        {/* Show verdict info */}
+        {(dispute?.status === "resolved_host" || dispute?.status === "resolved_watcher") && (
+          <div style={{ fontSize: 12, color: c.sub }}>
+            Resolved {dispute.resolved_by === "ai" ? "automatically by AI" : "by admin"} —{" "}
+            {dispute.resolved_by === "ai" ? `AI confidence: ${dispute.ai_confidence}%` : "Manual review completed"}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Host Evidence Upload ───────────────────────────────────────────────────
+    // ── Host Evidence Upload (real file picker + Supabase Storage) ────────────
+  const HostEvidenceUpload = ({ disputeId }) => {
+    const [uploading, setUploading] = useState(false);
+    const fileInputRef = useRef(null);
+
+    const handleFilePick = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (!file.type.startsWith('image/')) {
+        toast('Please upload an image file', 'error');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast('File too large — max 10MB', 'error');
+        return;
+      }
+
+      setUploading(true);
+      try {
+        const { apiUploadEvidence } = await import('../api.js');
+        const url = await apiUploadEvidence(file, user?.id);
+        await onSubmitEvidence(disputeId, user?.id, 'host', url);
+        toast('Evidence submitted — watcher will be notified', 'success');
+      } catch (e) {
+        toast('Failed to upload: ' + (e.message || 'Unknown error'), 'error');
+      }
+      setUploading(false);
+    };
+
+    return (
+      <>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleFilePick}
+        />
+        <Btn
+          small
+          variant="blue"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploading ? 'Uploading…' : '📎 Upload Call Log Screenshot'}
+        </Btn>
+      </>
+    );
+  };
+
+  // ── Follow-up Banner for Host ──────────────────────────────────────────────
+  const FollowupBanner = ({ followup }) => {
+    const [reqBusy, setReqBusy] = useState(false);
+
+    if (followup?.status === "expired") {
+      return (
+        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.sub}15`, fontSize: 12, color: c.sub, marginTop: 8 }}>
+          ⏰ Follow-up request expired — watcher didn't respond
+        </div>
+      );
+    }
+    if (followup?.status === "declined") {
+      return (
+        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.red}10`, fontSize: 12, color: c.red, marginTop: 8 }}>
+          ✕ Watcher declined follow-up — refund is final
+        </div>
+      );
+    }
+    if (followup?.status === "accepted") {
+      return (
+        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.green}10`, fontSize: 12, color: c.green, marginTop: 8 }}>
+          ✅ Follow-up accepted — contact re-revealed. Call now!
+        </div>
+      );
+    }
+    // pending
+    return (
+      <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.blue}10`, fontSize: 12, color: c.blue, marginTop: 8 }}>
+        ⏳ Follow-up request sent — waiting for watcher to respond…
+      </div>
+    );
+  };
 
   return (
     <div style={{ minHeight: "calc(100vh - 60px)" }}>
@@ -77,7 +218,7 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, marginBottom: 24, background: c.surface, padding: 4, borderRadius: 10, width: "fit-content", flexWrap: "wrap" }}>
           {["overview", "requests", "manage profile"].map(t => {
-            const badge = t === "requests" ? liveReqs.filter(p => p.status === "confirmed" && !calls.find(cl => cl.payment_id === p.id)).length : 0;
+            const badge = t === "requests" ? liveReqs.length : 0;
             return (
               <button key={t} onClick={() => setTab(t)} style={{ padding: "8px 18px", borderRadius: 8, border: "none", cursor: "pointer", background: tab === t ? c.card : "transparent", color: tab === t ? c.goldL : c.sub, fontSize: 12, fontWeight: 600, fontFamily: "'Plus Jakarta Sans',sans-serif", textTransform: "capitalize", position: "relative" }}>
                 {t}
@@ -151,19 +292,61 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
                         const callDone = calls.find(cl => cl.payment_id === pay.id || cl.paymentId === pay.id);
                         const refund   = refundReqs.find(r => r.payment_id === pay.id);
                         const conf     = (callConfirmations || []).find(cc => cc.payment_id === pay.id);
+                        const dispute  = disputes.find(d => d.payment_id === pay.id);       // NEW
+                        const followup = followupReqs.find(f => f.payment_id === pay.id);    // NEW
+                        const isDisputed = pay.status === "disputed" || !!dispute;
+                        const isCancelled = pay.status === "cancelled" || pay.status === "refunded_partial";
+
                         return (
-                          <div key={pay.id} style={{ padding: 16, borderRadius: 12, marginBottom: 10, background: `linear-gradient(135deg,${c.card},#1a1a24)`, border: `1px solid ${pay.status === "confirmed" ? c.gold : c.border}` }}>
+                          <div key={pay.id} style={{
+                            padding: 16, borderRadius: 12, marginBottom: 10,
+                            background: `linear-gradient(135deg,${c.card},#1a1a24)`,
+                            border: `1px solid ${isDisputed ? c.orange : isCancelled ? c.red : pay.status === "confirmed" ? c.gold : c.border}`,
+                          }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                              <div style={{ fontWeight: 600 }}>{pay.status === "pending" ? "🔒 New Request" : pay.watcher_name || pay.watcherName}</div>
+                              <div style={{ fontWeight: 600 }}>
+                                {isDisputed ? "⚡ " : ""}{pay.status === "pending" ? "🔒 New Request" : pay.watcher_name || pay.watcherName}
+                              </div>
                               {pay.paystack_verified && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: `${c.green}20`, color: c.green }}>✓ Verified</span>}
-                              {refund && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: `${c.orange}20`, color: c.orange }}>Refund {refund.status}</span>}
+                              {refund && !dispute && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: `${c.orange}20`, color: c.orange }}>Refund {refund.status}</span>}
+                              {isCancelled && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: `${c.red}20`, color: c.red }}>Cancelled</span>}
                             </div>
-                            {pay.status === "pending" && (
+
+                            {/* ── DISPUTE BANNER ── */}
+                            {dispute && <DisputeBanner dispute={dispute} payment={pay} />}
+
+                            {/* ── FOLLOW-UP BANNER ── */}
+                            {followup && <FollowupBanner followup={followup} />}
+
+                            {/* ── CANCELLED: Show follow-up request button ── */}
+                            {isCancelled && !followup && (
+                              <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginTop: 8 }}>
+                                <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>
+                                  🔄 Missed the call window?
+                                </div>
+                                <div style={{ fontSize: 12, color: c.sub, marginBottom: 10 }}>
+                                  Request a follow-up — the watcher can choose to retry the call with you.
+                                </div>
+                                <Btn
+                                  small variant="blue"
+                                  disabled={requestingFollowup[pay.id]}
+                                  onClick={async () => {
+                                    setRequestingFollowup(prev => ({ ...prev, [pay.id]: true }));
+                                    await onRequestFollowup(pay.id);
+                                    setRequestingFollowup(prev => ({ ...prev, [pay.id]: false }));
+                                  }}
+                                >
+                                  {requestingFollowup[pay.id] ? "Requesting…" : "🔄 Request Follow-up Call"}
+                                </Btn>
+                              </div>
+                            )}
+
+                            {pay.status === "pending" && !isDisputed && (
                               <div style={{ padding: "10px", borderRadius: 8, background: c.surface, border: `1px solid ${c.border}`, fontSize: 12, color: c.sub }}>
                                 🔒 Contacts hidden — waiting for admin confirmation
                               </div>
                             )}
-                            {pay.status === "confirmed" && (() => {
+                            {pay.status === "confirmed" && !isDisputed && (() => {
                               const number  = pay.watcher_contact || "";
                               const platform = pay.watcher_platform || "WhatsApp";
                               const digits  = number.replace(/\D/g, "");
@@ -183,12 +366,12 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
                                 </div>
                               );
                             })()}
-                            {conf && conf.status === "pending" && (
+                            {conf && conf.status === "pending" && !isDisputed && (
                               <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: `${c.gold}10`, border: `1px solid ${c.gold}30`, fontSize: 12, color: c.goldL }}>
                                 ⏳ Awaiting watcher confirmation…
                               </div>
                             )}
-                            {pay.status === "confirmed" && !callDone && !conf && (
+                            {pay.status === "confirmed" && !callDone && !conf && !isDisputed && (
                               <MarkDoneBtn payId={pay.id} live={live} onMarkDone={onMarkDone} />
                             )}
                           </div>
@@ -220,6 +403,7 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
                           {closedReqs.map(pay => {
                             const callDone = calls.find(cl => cl.payment_id === pay.id);
                             const conf = (callConfirmations || []).find(cc => cc.payment_id === pay.id);
+                            const dispute = disputes.find(d => d.payment_id === pay.id);
                             return (
                               <div key={pay.id} style={{ padding: 14, borderRadius: 10, marginBottom: 8, background: c.surface, border: `1px solid ${c.border}` }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -229,13 +413,26 @@ export function DashboardView({ user, users, payments, calls, verifyPrompts, onM
                                   </div>
                                   <div style={{ textAlign: "right" }}>
                                     <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: c.goldL }}>{S}{pay.total_charged || pay.amount}</div>
-                                    <div style={{ fontSize: 11, fontWeight: 600, color: pay.status === "completed" ? c.green : pay.status === "refunded" || pay.status === "refunded_partial" ? c.red : conf?.status === "confirmed" || conf?.status === "auto_confirmed" ? c.green : c.sub }}>
-                                      {pay.status === "completed" || conf?.status === "confirmed" || conf?.status === "auto_confirmed" ? "✅ Done" : pay.status === "refunded" ? "❌ Cancelled — refunded" : pay.status === "refunded_partial" ? "↩ Partial Refund" : "Done"}
+                                    <div style={{ fontSize: 11, fontWeight: 600, color: pay.status === "completed" ? c.green : pay.status === "refunded" || pay.status === "refunded_partial" || pay.status === "cancelled" ? c.red : conf?.status === "confirmed" || conf?.status === "auto_confirmed" ? c.green : dispute?.status === "resolved_host" ? c.green : dispute?.status === "resolved_watcher" ? c.red : c.sub }}>
+                                      {pay.status === "completed" || conf?.status === "confirmed" || conf?.status === "auto_confirmed" || dispute?.status === "resolved_host"
+                                        ? "✅ Done"
+                                        : pay.status === "refunded"
+                                          ? "❌ Cancelled — refunded"
+                                          : pay.status === "refunded_partial" || pay.status === "cancelled"
+                                            ? "↩ Partial Refund"
+                                            : dispute?.status === "resolved_watcher"
+                                              ? "❌ Dispute lost — refunded"
+                                              : "Done"}
                                     </div>
                                   </div>
                                 </div>
                                 {callDone?.released && <div style={{ marginTop: 8, fontSize: 12, color: c.green }}>💸 Funds released to your MoMo</div>}
                                 {conf?.status === "auto_confirmed" && <div style={{ marginTop: 6, fontSize: 11, color: c.dim }}>🤖 Auto-confirmed after timeout</div>}
+                                {dispute && (dispute.status === "resolved_host" || dispute.status === "resolved_watcher") && (
+                                  <div style={{ marginTop: 6, fontSize: 11, color: dispute.status === "resolved_host" ? c.green : c.red }}>
+                                    {dispute.status === "resolved_host" ? "✅ Dispute won" : "❌ Dispute lost"} — {dispute.resolved_by === "ai" ? `AI verdict (${dispute.ai_confidence}%)` : "Admin decision"}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

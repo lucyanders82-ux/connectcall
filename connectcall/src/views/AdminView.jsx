@@ -3,22 +3,37 @@ import { c, S, ADMIN_TOKEN } from "../constants";
 import { Btn, Avatar, OnlineDot } from "../components/UI";
 import { AdminRefundActions } from "../components/AdminRefundActions";
 import { WithdrawBtn } from "../components/WithdrawBtn";
+import { apiTriggerAIVerdict } from "../api";
 
-export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRelease, reports, onPushVerify, setView, confirmPayment, refundReqs, callConfirmations, onApproveRefund, onDenyRefund, toast }) {
+export function AdminView({
+  users, payments, calls, wallet, verifyPrompts, onRelease, reports,
+  onPushVerify, setView, confirmPayment, refundReqs, callConfirmations,
+  onApproveRefund, onDenyRefund, toast,
+  disputes = [],  // NEW
+}) {
   const [tab, setTab] = useState("overview");
   const [showPayHistory,  setShowPayHistory]  = useState(false);
   const [showCallHistory, setShowCallHistory] = useState(false);
   const [adminPayOpen,    setAdminPayOpen]    = useState(false);
   const [expandedPayments, setExpandedPayments] = useState(new Set());
   const [expandedCalls,    setExpandedCalls]    = useState(new Set());
+  const [expandedDisputes, setExpandedDisputes] = useState(new Set()); // NEW
+  const [aiVerdictBusy, setAIVerdictBusy] = useState({});              // NEW
 
   const pendingRefunds  = refundReqs.filter(r => r.status === "pending" || r.status === "pending_host");
   const pendingPayments = payments.filter(p => p.status === "pending" && p.paystack_verified);
   const hostsWithPayout    = users.filter(u => u.role === "host" && u.paystack_recipient_code).length;
   const hostsWithoutPayout = users.filter(u => u.role === "host" && !u.paystack_recipient_code).length;
 
-  const togglePayment = id => setExpandedPayments(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleCall    = id => setExpandedCalls(prev    => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // ── NEW: Dispute stats ──
+  const openDisputes       = disputes.filter(d => d.status === "open" || d.status === "host_evidence" || d.status === "watcher_evidence");
+  const escalatedDisputes  = disputes.filter(d => d.status === "escalated_admin");
+  const aiPendingDisputes  = disputes.filter(d => d.status === "ai_verdict_pending");
+  const resolvedDisputes   = disputes.filter(d => d.status === "resolved_host" || d.status === "resolved_watcher");
+
+  const togglePayment  = id => setExpandedPayments(prev  => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleCall     = id => setExpandedCalls(prev     => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleDispute  = id => setExpandedDisputes(prev  => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const exportCSV = () => {
     const rows = [
@@ -34,6 +49,28 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
     const a    = document.createElement("a");
     a.href = url; a.download = `connectcall-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
+  };
+
+  // ── NEW: Trigger AI verdict manually ──
+    // ── Trigger AI verdict using proper API function ──
+  const handleTriggerAIVerdict = async (disputeId) => {
+    setAIVerdictBusy(prev => ({ ...prev, [disputeId]: true }));
+    try {
+      const result = await apiTriggerAIVerdict(disputeId);
+      if (result.error) {
+        toast("AI verdict failed: " + result.error, "error");
+      } else {
+        toast(
+          result.autoResolved
+            ? `AI resolved in favor of ${result.verdict} (${result.confidence}% confidence)`
+            : "AI could not reach verdict — escalated to admin",
+          result.autoResolved ? "success" : "warning"
+        );
+      }
+    } catch (e) {
+      toast("AI verdict failed: " + e.message, "error");
+    }
+    setAIVerdictBusy(prev => ({ ...prev, [disputeId]: false }));
   };
 
   const renderCallCard = (conf, isPending) => {
@@ -67,6 +104,168 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
     );
   };
 
+  // ── NEW: Dispute Card ──
+  const renderDisputeCard = (dispute) => {
+    const pay  = payments.find(p => p.id === dispute.payment_id);
+    const host = users.find(u => u.id === pay?.target_user_id);
+    const watcher = users.find(u => u.id === pay?.watcher_id);
+    const isExp = expandedDisputes.has(dispute.id);
+    const isOpen = dispute.status === "open" || dispute.status === "host_evidence" || dispute.status === "watcher_evidence";
+    const isEscalated = dispute.status === "escalated_admin";
+    const isResolved = dispute.status === "resolved_host" || dispute.status === "resolved_watcher";
+    const isAI = dispute.status === "ai_verdict_pending";
+
+    const statusColors = {
+      open: c.orange, host_evidence: c.gold, watcher_evidence: c.gold,
+      ai_verdict_pending: c.blue, escalated_admin: c.red,
+      resolved_host: c.green, resolved_watcher: c.red, withdrawn: c.sub,
+    };
+    const borderColor = statusColors[dispute.status] || c.border;
+
+    return (
+      <div key={dispute.id} style={{ background: c.card, border: `2px solid ${borderColor}40`, borderRadius: 14, marginBottom: 12, overflow: "hidden" }}>
+        <div onClick={() => toggleDispute(dispute.id)} style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 18 }}>{isOpen ? "🔴" : isAI ? "🤖" : isEscalated ? "🚨" : isResolved ? "✅" : "⚪"}</span>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>
+                  {host?.name || "Host"} ←→ {watcher?.name || pay?.watcher_name || "Watcher"}
+                </div>
+                <div style={{ fontSize: 11, color: c.sub }}>
+                  {S}{pay?.total_charged || pay?.amount || 0} · Opened {new Date(dispute.opened_at).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+              background: `${borderColor}20`, color: borderColor,
+              border: `1px solid ${borderColor}40`,
+            }}>
+              {dispute.status.replace(/_/g, " ").toUpperCase()}
+            </span>
+            <span style={{ color: c.sub }}>{isExp ? "▲" : "▼"}</span>
+          </div>
+        </div>
+        {isExp && (
+          <div style={{ padding: "0 20px 16px", borderTop: `1px solid ${c.border}`, paddingTop: 14 }}>
+            {/* Details grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14, fontSize: 12 }}>
+              <div>
+                <div style={{ color: c.sub, marginBottom: 2 }}>Reason</div>
+                <div style={{ color: c.text, fontWeight: 500 }}>{dispute.opened_reason || "No reason given"}</div>
+              </div>
+              <div>
+                <div style={{ color: c.sub, marginBottom: 2 }}>Opened by</div>
+                <div style={{ color: c.text, fontWeight: 500, textTransform: "capitalize" }}>{dispute.opened_by}</div>
+              </div>
+              <div>
+                <div style={{ color: c.sub, marginBottom: 2 }}>Host Evidence</div>
+                {dispute.host_evidence_url ? (
+                  <a href={dispute.host_evidence_url} target="_blank" rel="noopener noreferrer" style={{ color: c.blue, textDecoration: "underline" }}>
+                    View Screenshot ↗
+                  </a>
+                ) : (
+                  <span style={{ color: c.dim }}>Not submitted</span>
+                )}
+                {dispute.host_evidence_submitted_at && (
+                  <div style={{ fontSize: 10, color: c.dim }}>{new Date(dispute.host_evidence_submitted_at).toLocaleString()}</div>
+                )}
+              </div>
+              <div>
+                <div style={{ color: c.sub, marginBottom: 2 }}>Watcher Evidence</div>
+                {dispute.watcher_evidence_url ? (
+                  <a href={dispute.watcher_evidence_url} target="_blank" rel="noopener noreferrer" style={{ color: c.blue, textDecoration: "underline" }}>
+                    View Screenshot ↗
+                  </a>
+                ) : (
+                  <span style={{ color: c.dim }}>Not submitted</span>
+                )}
+                {dispute.watcher_evidence_submitted_at && (
+                  <div style={{ fontSize: 10, color: c.dim }}>{new Date(dispute.watcher_evidence_submitted_at).toLocaleString()}</div>
+                )}
+              </div>
+            </div>
+
+            {/* AI Verdict details */}
+            {dispute.ai_verdict && (
+              <div style={{
+                padding: "12px 16px", borderRadius: 10, marginBottom: 12,
+                background: dispute.ai_confidence >= 85
+                  ? (dispute.ai_verdict === "host" ? `${c.green}10` : `${c.red}10`)
+                  : `${c.orange}10`,
+                border: `1px solid ${dispute.ai_confidence >= 85 ? (dispute.ai_verdict === "host" ? c.green : c.red) : c.orange}30`,
+              }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: dispute.ai_verdict === "host" ? c.green : dispute.ai_verdict === "watcher" ? c.red : c.orange }}>
+                  🤖 AI Verdict: {dispute.ai_verdict === "inconclusive" ? "Inconclusive" : `Ruled for ${dispute.ai_verdict.toUpperCase()}`}
+                  {" · "}{dispute.ai_confidence}% confidence
+                </div>
+                {dispute.ai_analysis && (
+                  <div style={{ fontSize: 12, color: c.sub, lineHeight: 1.5 }}>{dispute.ai_analysis}</div>
+                )}
+              </div>
+            )}
+
+            {/* Admin actions */}
+            {(isOpen || isEscalated) && (dispute.host_evidence_url || dispute.watcher_evidence_url) && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                <Btn
+                  small variant="blue"
+                  disabled={aiVerdictBusy[dispute.id]}
+                  onClick={(e) => { e.stopPropagation(); handleTriggerAIVerdict(dispute.id); }}
+                >
+                  {aiVerdictBusy[dispute.id] ? "Running…" : "🤖 Run AI Verdict"}
+                </Btn>
+                <Btn
+                  small variant="green"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Manual resolve for host — calls the AI verdict route but we can also add a manual override
+                    toast("Manual resolution coming soon — use AI verdict for now", "info");
+                  }}
+                >
+                  ✅ Rule for Host
+                </Btn>
+                <Btn
+                  small variant="red"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toast("Manual resolution coming soon — use AI verdict for now", "info");
+                  }}
+                >
+                  ❌ Rule for Watcher
+                </Btn>
+              </div>
+            )}
+
+            {/* No evidence submitted yet */}
+            {isOpen && !dispute.host_evidence_url && !dispute.watcher_evidence_url && (
+              <div style={{ fontSize: 12, color: c.orange, padding: "8px 12px", borderRadius: 8, background: `${c.orange}10` }}>
+                ⏳ Waiting for parties to submit evidence. Host has 20 minutes from dispute opening.
+              </div>
+            )}
+
+            {/* Resolution info */}
+            {isResolved && (
+              <div style={{ fontSize: 12, padding: "8px 12px", borderRadius: 8, background: dispute.status === "resolved_host" ? `${c.green}10` : `${c.red}10`, color: dispute.status === "resolved_host" ? c.green : c.red }}>
+                {dispute.status === "resolved_host" ? "✅ Resolved in host's favor" : "❌ Resolved in watcher's favor"}
+                {" — "}{dispute.resolved_by === "ai" ? `AI (${dispute.ai_confidence}% confidence)` : dispute.resolved_by === "auto_timeout" ? "Auto-timeout (no host evidence)" : "Admin"}
+                {dispute.resolved_at && ` · ${new Date(dispute.resolved_at).toLocaleString()}`}
+              </div>
+            )}
+
+            {/* Payment reference */}
+            <div style={{ marginTop: 10, fontSize: 11, color: c.dim, fontFamily: "'DM Mono',monospace" }}>
+              Payment: {dispute.payment_id} · Ref: {pay?.paystack_ref || "N/A"}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ minHeight: "calc(100vh - 60px)" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
@@ -85,14 +284,29 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
               ["Payout Ready", hostsWithPayout],
               ["No Payout",   hostsWithoutPayout],
               ["Refunds",     pendingRefunds.length],
+              ["Disputes",    openDisputes.length + escalatedDisputes.length],  // NEW
             ].map(([l, v]) => (
               <div key={l} style={{ background: c.surface, borderRadius: 10, padding: "12px 16px", minWidth: 90 }}>
-                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 26, fontWeight: 600, color: l === "Refunds" && v > 0 ? c.orange : l === "No Payout" && v > 0 ? c.red : c.text }}>{v}</div>
+                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 26, fontWeight: 600, color: l === "Refunds" && v > 0 ? c.orange : l === "Disputes" && v > 0 ? c.red : l === "No Payout" && v > 0 ? c.red : c.text }}>{v}</div>
                 <div style={{ color: c.sub, fontSize: 11 }}>{l}</div>
               </div>
             ))}
           </div>
         </div>
+
+        {/* Disputes alert */}
+        {(openDisputes.length > 0 || escalatedDisputes.length > 0) && (
+          <div style={{ background: `${c.red}15`, border: `1px solid ${c.red}40`, borderRadius: 12, padding: "12px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <strong style={{ color: c.red }}>{openDisputes.length + escalatedDisputes.length} active dispute(s)</strong>
+              <span style={{ color: c.sub, fontSize: 13, marginLeft: 8 }}>
+                {escalatedDisputes.length > 0 && `${escalatedDisputes.length} need manual review`}
+                {openDisputes.length > 0 && `${escalatedDisputes.length > 0 ? ', ' : ''}${openDisputes.length} in evidence phase`}
+              </span>
+            </div>
+            <Btn small variant="red" onClick={() => setTab("disputes")}>Review →</Btn>
+          </div>
+        )}
 
         {/* Pending payments alert */}
         {pendingPayments.length > 0 && (
@@ -104,12 +318,13 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, marginBottom: 22, background: c.surface, padding: 4, borderRadius: 10, width: "fit-content", flexWrap: "wrap" }}>
-          {["overview", "payments", "calls", "refunds", "reports", "users"].map(t => (
+          {["overview", "payments", "calls", "refunds", "disputes", "reports", "users"].map(t => (
             <button key={t} onClick={() => setTab(t)} style={{ padding: "8px 18px", borderRadius: 8, border: "none", cursor: "pointer", background: tab === t ? c.card : "transparent", color: tab === t ? c.goldL : c.sub, fontSize: 12, fontWeight: 600, position: "relative" }}>
               {t}
-              {t === "refunds"  && pendingRefunds.length > 0                          && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: c.red }} />}
-              {t === "payments" && pendingPayments.length > 0                         && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: c.gold }} />}
-              {t === "reports"  && reports.filter(r => r.status === "pending").length > 0 && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: c.orange }} />}
+              {t === "refunds"   && pendingRefunds.length > 0                              && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: c.red }} />}
+              {t === "disputes"  && (openDisputes.length + escalatedDisputes.length) > 0    && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: c.red }} />}
+              {t === "payments"  && pendingPayments.length > 0                              && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: c.gold }} />}
+              {t === "reports"   && reports.filter(r => r.status === "pending").length > 0  && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: c.orange }} />}
             </button>
           ))}
         </div>
@@ -131,6 +346,7 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
                 ["Payments",     payments.filter(p => p.paystack_verified).length, c.goldL],
                 ["Revenue",      `${S}${payments.filter(p => p.paystack_verified).reduce((a, x) => a + Number(x.platform_fee || 0), 0).toFixed(0)}`, c.purple],
                 ["Refunds",      pendingRefunds.length, c.orange],
+                ["Disputes",     openDisputes.length + escalatedDisputes.length, c.red],
                 ["Payout Ready", hostsWithPayout, c.green],
               ].map(([l, v, col]) => (
                 <div key={l} style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 12, padding: 16, textAlign: "center" }}>
@@ -251,14 +467,14 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
                         const host  = users.find(u => u.id === (pay.target_user_id || pay.targetUserId));
                         const isExp = expandedPayments.has(pay.id);
                         return (
-                          <div key={pay.id} style={{ background: c.surface, border: `1px solid ${pay.status === "refunded" ? c.red : pay.status === "completed" ? `${c.green}40` : c.border}`, borderRadius: 10, marginBottom: 8, overflow: "hidden" }}>
+                          <div key={pay.id} style={{ background: c.surface, border: `1px solid ${pay.status === "refunded" ? c.red : pay.status === "disputed" ? `${c.orange}40` : pay.status === "completed" ? `${c.green}40` : c.border}`, borderRadius: 10, marginBottom: 8, overflow: "hidden" }}>
                             <div onClick={() => togglePayment(pay.id)} style={{ padding: "12px 16px", display: "flex", gap: 12, alignItems: "center", cursor: "pointer" }}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ fontWeight: 600, fontSize: 13 }}>{pay.watcher_name} → {host?.name || "—"}</div>
                                 <div style={{ color: c.sub, fontSize: 11 }}>{new Date(pay.created_at || pay.ts).toLocaleString()}</div>
                               </div>
                               <div style={{ fontWeight: 600, fontSize: 13 }}>{S}{pay.total_charged || pay.amount}</div>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: pay.status === "completed" ? c.green : pay.status === "refunded" ? c.red : c.sub }}>{pay.status.toUpperCase()}</div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: pay.status === "completed" ? c.green : pay.status === "refunded" || pay.status === "refunded_partial" ? c.red : pay.status === "disputed" ? c.orange : c.sub }}>{pay.status.toUpperCase()}</div>
                               <span style={{ color: c.sub, fontSize: 14 }}>{isExp ? "▲" : "▼"}</span>
                             </div>
                             {isExp && (
@@ -325,10 +541,11 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
             {refundReqs.map(r => {
               const pay  = payments.find(p => p.id === r.payment_id);
               const host = users.find(u => u.id === pay?.target_user_id);
-              const isDispute = r.reason?.toLowerCase().includes("call did not") || r.reason?.toLowerCase().includes("dispute") || r.refund_type === "dispute";
+              const isDispute = r.reason?.toLowerCase().includes("call did not") || r.reason?.toLowerCase().includes("dispute") || r.refund_type === "dispute" || r.refund_type === "dispute_evidence";
               const isPending  = r.status === "pending" || r.status === "pending_host";
               const isApproved = r.status === "approved";
               const isDenied   = r.status === "denied";
+              const linkedDispute = disputes.find(d => d.id === r.dispute_id);
               return (
                 <div key={r.id} style={{ background: c.card, border: `1px solid ${isDispute ? c.red : isPending ? c.orange : isApproved ? c.green : c.border}`, borderRadius: 14, padding: 20, marginBottom: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
@@ -339,8 +556,18 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
                           <span style={{ fontSize: 11, fontWeight: 700, color: c.red, letterSpacing: .5 }}>DISPUTED CALL</span>
                         </div>
                       )}
+                      {r.auto_refunded && (
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: `${c.green}15`, border: `1px solid ${c.green}40`, borderRadius: 20, padding: "3px 10px", marginBottom: 8, marginLeft: isDispute ? 8 : 0 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: c.green }}>🤖 AUTO-REFUNDED ({r.refund_percentage || 70}%)</span>
+                        </div>
+                      )}
                       <div style={{ fontWeight: 600, fontSize: 15 }}>{r.watcher_name} → {host?.name || "Host"}</div>
                       <div style={{ fontSize: 12, color: c.sub, marginTop: 2 }}>{r.refund_type || "Manual"} · {new Date(r.created_at).toLocaleString()}</div>
+                      {linkedDispute && (
+                        <div style={{ fontSize: 11, color: c.orange, marginTop: 4 }}>
+                          🔗 Linked to dispute — <span onClick={() => setTab("disputes")} style={{ cursor: "pointer", textDecoration: "underline" }}>view in Disputes tab</span>
+                        </div>
+                      )}
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 24, color: c.goldL, fontWeight: 600 }}>{S}{r.refund_amount || pay?.total_charged || 0}</div>
@@ -359,12 +586,59 @@ export function AdminView({ users, payments, calls, wallet, verifyPrompts, onRel
                       <span>Ref: <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 11 }}>{pay.paystack_ref}</span></span>
                     </div>
                   )}
-                  {isPending  && <AdminRefundActions r={r} onApproveRefund={onApproveRefund} onDenyRefund={onDenyRefund} />}
+                  {isPending  && !linkedDispute && <AdminRefundActions r={r} onApproveRefund={onApproveRefund} onDenyRefund={onDenyRefund} />}
+                  {isPending  && linkedDispute && (
+                    <div style={{ fontSize: 12, color: c.orange, padding: "8px 12px", borderRadius: 8, background: `${c.orange}10` }}>
+                      ⏳ This refund is tied to an active dispute — resolve the dispute first in the Disputes tab.
+                    </div>
+                  )}
                   {isApproved && <div style={{ fontSize: 12, color: c.green, fontWeight: 600 }}>💸 Refund processed — funds returned to watcher</div>}
                   {isDenied   && <div style={{ fontSize: 12, color: c.red }}>❌ Refund denied — payment remains with host</div>}
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── NEW: Disputes ── */}
+        {tab === "disputes" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+              <div>
+                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22 }}>Disputes</div>
+                <div style={{ color: c.sub, fontSize: 13, marginTop: 2 }}>
+                  {openDisputes.length} open · {escalatedDisputes.length} escalated · {resolvedDisputes.length} resolved
+                </div>
+              </div>
+            </div>
+
+            {disputes.length === 0 && (
+              <div style={{ color: c.sub, textAlign: "center", padding: "40px 0" }}>
+                No disputes yet.<br /><span style={{ fontSize: 12, color: c.dim }}>Disputes are created when a watcher claims the host didn't call after marking done.</span>
+              </div>
+            )}
+
+            {/* Active disputes first */}
+            {[...openDisputes, ...escalatedDisputes, ...aiPendingDisputes].length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.red, display: "inline-block", animation: "pulse 2s infinite" }} />
+                  <div style={{ fontWeight: 600, color: c.red, fontSize: 14 }}>Active Disputes</div>
+                </div>
+                {[...openDisputes, ...escalatedDisputes, ...aiPendingDisputes].map(d => renderDisputeCard(d))}
+              </div>
+            )}
+
+            {/* Resolved disputes */}
+            {resolvedDisputes.length > 0 && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 16 }}>📁</span>
+                  <div style={{ fontWeight: 600, color: c.sub, fontSize: 14 }}>Resolved Disputes ({resolvedDisputes.length})</div>
+                </div>
+                {resolvedDisputes.map(d => renderDisputeCard(d))}
+              </div>
+            )}
           </div>
         )}
 

@@ -8,6 +8,7 @@ import {
   apiInitializePayment, apiVerifyPayment, apiConfirmPayment,
   apiReleaseFunds, apiOnboardPayout, apiConfirmCall,
   apiDenyRefund, apiWatcherRefund, apiHostApproveRefund, apiAdminApproveRefund,
+  apiSubmitEvidence, apiRequestFollowup, apiAcceptFollowup, apiGetDispute, apiCheckExpired,  // NEW
 } from "./api";
 
 // ── shared UI ─────────────────────────────────────────────────────────────────
@@ -41,6 +42,10 @@ export default function App() {
   const [toasts,        setToasts]        = useState([]);
   const [pendingHost,   setPendingHost]   = useState(null);
   const [selectedUser,  setSelectedUser]  = useState(null);
+
+  // ── NEW STATE ──────────────────────────────────────────────────────────────
+  const [disputes,      setDisputes]      = useState([]);
+  const [followupReqs,  setFollowupReqs]  = useState([]);
 
   // ── boot: restore session ──────────────────────────────────────────────────
   useEffect(() => {
@@ -127,6 +132,15 @@ export default function App() {
         if (payload.eventType === "INSERT") setFavorites(prev => [...prev, payload.new]);
         if (payload.eventType === "DELETE") setFavorites(prev => prev.filter(f => f.id !== payload.old.id));
       })
+      // ── NEW: disputes & follow-up realtime ──
+      .on("postgres_changes", { event: "*", schema: "public", table: "disputes" }, payload => {
+        const newRow = payload.new;
+        setDisputes(prev => { const exists = prev.find(d => d.id === newRow.id); return exists ? prev.map(d => d.id === newRow.id ? newRow : d) : [newRow, ...prev]; });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "followup_requests" }, payload => {
+        const newRow = payload.new;
+        setFollowupReqs(prev => { const exists = prev.find(f => f.id === newRow.id); return exists ? prev.map(f => f.id === newRow.id ? newRow : f) : [newRow, ...prev]; });
+      })
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
@@ -162,7 +176,7 @@ export default function App() {
     const run = async () => {
       try {
         await fetch(`${API_BASE}/api/admin/auto-confirm-pending`, { method: "POST", headers: { "x-admin-token": ADMIN_TOKEN } });
-        await fetch(`${API_BASE}/api/call/check-expired`, { method: "POST" });
+        await apiCheckExpired(); // NEW: also expires disputes & follow-ups
       } catch {}
     };
     run();
@@ -174,7 +188,11 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [{ data: uRows }, { data: pRows }, { data: cRows }, { data: vRows }, { data: favRows }, { data: rRows }, { data: confRows }, { data: repRows }] = await Promise.all([
+        const [
+          { data: uRows }, { data: pRows }, { data: cRows }, { data: vRows },
+          { data: favRows }, { data: rRows }, { data: confRows }, { data: repRows },
+          { data: dRows }, { data: fRows },  // NEW
+        ] = await Promise.all([
           supabase.from("users").select("*").order("created_at", { ascending: false }),
           supabase.from("payments").select("*").order("created_at", { ascending: false }),
           supabase.from("calls").select("*").order("created_at", { ascending: false }),
@@ -183,6 +201,8 @@ export default function App() {
           supabase.from("refund_requests").select("*").order("created_at", { ascending: false }),
           supabase.from("call_confirmations").select("*").order("created_at", { ascending: false }),
           supabase.from("reports").select("*").order("created_at", { ascending: false }),
+          supabase.from("disputes").select("*").order("opened_at", { ascending: false }),           // NEW
+          supabase.from("followup_requests").select("*").order("requested_at", { ascending: false }), // NEW
         ]);
         if (uRows) {
           const mapped = uRows.map(normaliseUser);
@@ -203,6 +223,8 @@ export default function App() {
         if (favRows) setFavorites(favRows);
         if (rRows) setRefundReqs(rRows);
         if (repRows) setReports(repRows);
+        if (dRows) setDisputes(dRows);        // NEW
+        if (fRows) setFollowupReqs(fRows);    // NEW
         if (pRows && cRows) {
           const releasedIds = new Set((cRows || []).filter(r => r.released).map(r => r.payment_id));
           const held = (pRows || []).filter(r => !releasedIds.has(r.id) && r.status !== "refunded" && r.status !== "failed" && r.status !== "pending_init").reduce((a, r) => a + Number(r.total_charged || r.amount), 0);
@@ -364,12 +386,40 @@ export default function App() {
   const handleRefundRequest = async (paymentId, reason) => {
     const result = await apiWatcherRefund(paymentId, reason, currentUser?.id);
     if (result.error) { toast(result.error, "error"); return; }
+    // Refresh related tables
     const { data: rRows } = await supabase.from("refund_requests").select("*").order("created_at", { ascending: false });
     if (rRows) setRefundReqs(rRows);
     const { data: pRows } = await supabase.from("payments").select("*").order("created_at", { ascending: false });
     if (pRows) setPayments(pRows.map(r => ({ ...r, ts: new Date(r.created_at), targetUserId: r.target_user_id, watcherName: r.watcher_name })));
-    toast(result.autoRefunded ? result.message : result.message, result.autoRefunded ? "success" : "info");
+    // If dispute was opened, refresh disputes too
+    if (result.disputeOpened) {
+      const { data: dRows } = await supabase.from("disputes").select("*").order("opened_at", { ascending: false });
+      if (dRows) setDisputes(dRows);
+    }
+    toast(result.disputeOpened ? result.message : result.message, result.autoRefunded ? "success" : result.disputeOpened ? "warning" : "info");
     return result;
+  };
+
+  // ── NEW HANDLERS ──────────────────────────────────────────────────────────
+  const handleSubmitEvidence = async (disputeId, userId, role, evidenceUrl) => {
+    const result = await apiSubmitEvidence(disputeId, userId, role, evidenceUrl);
+    if (result.error) { toast(result.error, "error"); return; }
+    // Refresh disputes
+    const { data: dRows } = await supabase.from("disputes").select("*").order("opened_at", { ascending: false });
+    if (dRows) setDisputes(dRows);
+    toast(result.message || "Evidence submitted", "success");
+    return result;
+  };
+
+  const handleAcceptFollowup = async (followupId, watcherId, accepted) => {
+    const result = await apiAcceptFollowup(followupId, watcherId, accepted);
+    if (result.error) { toast(result.error, "error"); return; }
+    // Refresh follow-ups and payments
+    const { data: fRows } = await supabase.from("followup_requests").select("*").order("requested_at", { ascending: false });
+    if (fRows) setFollowupReqs(fRows);
+    const { data: pRows } = await supabase.from("payments").select("*").order("created_at", { ascending: false });
+    if (pRows) setPayments(pRows.map(r => ({ ...r, ts: new Date(r.created_at), targetUserId: r.target_user_id, watcherName: r.watcher_name })));
+    toast(result.message || (accepted ? "Follow-up accepted" : "Follow-up declined"), accepted ? "success" : "info");
   };
 
   const handleHostApproveRefund = async refundId => {
@@ -461,6 +511,16 @@ export default function App() {
           onAnswerVerify={handleAnswerVerify} toast={toast} setView={setView}
           refundReqs={refundReqs} onHostApproveRefund={handleHostApproveRefund}
           callConfirmations={callConfirmations}
+          disputes={disputes}                                              // NEW
+          followupReqs={followupReqs}                                       // NEW
+          onSubmitEvidence={handleSubmitEvidence}                           // NEW
+          onRequestFollowup={async (paymentId) => {                        // NEW
+            const result = await apiRequestFollowup(paymentId, currentUser?.id);
+            if (result.error) { toast(result.error, "error"); return; }
+            const { data: fRows } = await supabase.from("followup_requests").select("*").order("requested_at", { ascending: false });
+            if (fRows) setFollowupReqs(fRows);
+            toast(result.message, "success");
+          }}
         />
       )}
       {view === "dashboard" && currentUser && currentUser.role === "watcher" && (
@@ -469,6 +529,10 @@ export default function App() {
           onRefundRequest={handleRefundRequest} toast={toast} setView={setView}
           callConfirmations={callConfirmations} onConfirmCall={handleConfirmCall}
           favorites={favorites} toggleFavorite={toggleFavorite}
+          disputes={disputes}                                              // NEW
+          followupReqs={followupReqs}                                       // NEW
+          onSubmitEvidence={handleSubmitEvidence}                           // NEW
+          onAcceptFollowup={handleAcceptFollowup}                           // NEW
         />
       )}
       {view === "admin" && isAdmin && (
@@ -478,6 +542,7 @@ export default function App() {
           onPushVerify={handlePushVerify} setView={setView} confirmPayment={confirmPayment}
           refundReqs={refundReqs} callConfirmations={callConfirmations}
           onApproveRefund={handleApproveRefund} onDenyRefund={handleDenyRefund} toast={toast}
+          disputes={disputes}                                              // NEW
         />
       )}
     </>
