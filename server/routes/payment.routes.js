@@ -362,6 +362,15 @@ async function handleEarlyCancel(pay, reason, watcherId, res) {
 
 // ── NEW: Check if host marked done BEFORE processing no-contact claim ──
 async function handleNoContactWithDisputeCheck(pay, reason, watcherId, res) {
+  // NEW: If host clicked the call link, block refund — watcher must use dispute
+  if (pay.call_initiated_at) {
+    return res.status(400).json({
+      error: 'Host has already initiated the call. Please use the Dispute option instead if the call did not happen.',
+      hostInitiated: true,
+      useDispute: true,
+    });
+  }
+
   // Check if host has already marked the call as done
   const { data: callConfirmation } = await supabase
     .from('call_confirmations')
@@ -374,10 +383,8 @@ async function handleNoContactWithDisputeCheck(pay, reason, watcherId, res) {
   const hostMarkedDone = callConfirmation && callConfirmation.status === 'confirmed';
 
   if (hostMarkedDone) {
-    // ── NEW FLOW: Host claims call happened → open dispute with evidence ──
     return await openDisputeWithEvidence(pay, reason, watcherId, callConfirmation, res);
   } else {
-    // ── EXISTING FLOW: Host never marked done → 70% auto-refund ──
     return await handleNoContactClaim(pay, reason, watcherId, res);
   }
 }
@@ -1064,10 +1071,9 @@ router.get('/call/check-expired', async (req, res) => {
       console.log(`[CheckExpired] Expired ${expiredFollowups.length} follow-ups`);
     }
 
-    // Auto-resolve disputes where host never submitted evidence (timeout)
-    // Auto-resolve disputes where host never submitted evidence (timeout)
-const now2 = new Date().toISOString();
-const { data: staleDisputes } = await supabase
+        // Auto-resolve disputes where host never submitted evidence (timeout)
+    const now2 = new Date().toISOString();
+    const { data: staleDisputes } = await supabase
       .from('disputes')
       .select('id')
       .eq('status', 'open')
@@ -1077,16 +1083,61 @@ const { data: staleDisputes } = await supabase
 
     if (staleDisputes?.length) {
       for (const d of staleDisputes) {
-        // Host failed to submit evidence → rule in watcher's favor
         await resolveDisputeOutcome(d.id, 'watcher');
       }
       console.log(`[CheckExpired] Auto-resolved ${staleDisputes.length} disputes in watcher's favor`);
+    }
+
+    // NEW: Auto-refund payments where 3 hours passed, host never clicked link, never marked done
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    const { data: abandonedPayments } = await supabase
+      .from('payments')
+      .select('id')
+      .eq('status', 'confirmed')
+      .is('call_initiated_at', null)
+      .lt('contact_revealed_at', threeHoursAgo);
+
+    let autoRefunded = 0;
+    if (abandonedPayments?.length) {
+      for (const p of abandonedPayments) {
+        const { data: pay } = await supabase.from('payments').select('*').eq('id', p.id).single();
+        if (pay) {
+          const totalPaid = parseFloat(pay.total_charged || pay.amount);
+          const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
+          if (pay.paystack_ref) {
+            try {
+              await paystackRequest('POST', '/refund', {
+                transaction: pay.paystack_ref,
+                amount: Math.round(refundAmount * 100),
+              });
+            } catch (e) {
+              console.error('[AutoRefund] Paystack error:', e.message);
+            }
+          }
+          await supabase.from('payments').update({ status: 'refunded_partial' }).eq('id', pay.id);
+          await supabase.from('refund_requests').insert([{
+            payment_id: pay.id,
+            reason: 'Auto-refunded — host never initiated call within 3 hours',
+            status: 'approved',
+            watcher_id: pay.watcher_id,
+            watcher_name: pay.watcher_name,
+            refund_amount: refundAmount,
+            refund_type: 'auto_3_hour',
+            resolved_at: new Date().toISOString(),
+            auto_refunded: true,
+            refund_percentage: EARLY_REFUND_PCT,
+          }]);
+          autoRefunded++;
+        }
+      }
+      console.log(`[CheckExpired] Auto-refunded ${autoRefunded} abandoned payments`);
     }
 
     return res.json({
       expiredConfirmations: expiredConfs?.length || 0,
       expiredFollowups: expiredFollowups?.length || 0,
       resolvedDisputes: staleDisputes?.length || 0,
+      autoRefunded,
     });
   } catch (err) {
     console.error('[CheckExpired] Exception:', err);

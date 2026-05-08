@@ -19,7 +19,7 @@ export async function notifyWatcherCallMarkedDone(watcherContact, hostName) {
     const to = formatGhanaNumber(watcherContact);
     await sms.send({
       to: [to],
-      message: `ConnectCall: ${hostName} has marked your call as done. You have 3 minutes to confirm or dispute. Log in now at connectcall.vercel.app`,
+      message: `ConnectCall: ${hostName} has marked your call as done. You have 10 minutes to confirm or dispute. Log in now at connectcall.vercel.app`,
       from: process.env.AT_SENDER_ID || undefined,
     });
     console.log(`[SMS] Watcher notified — ${to}`);

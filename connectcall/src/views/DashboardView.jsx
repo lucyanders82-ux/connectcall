@@ -390,10 +390,10 @@ export function DashboardView({
                               );
                             })()}
                             {conf && conf.status === "pending" && !isDisputed && (
-                              <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: `${c.gold}10`, border: `1px solid ${c.gold}30`, fontSize: 12, color: c.goldL }}>
-                                ⏳ Awaiting watcher confirmation…
-                              </div>
-                            )}
+  <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: `${c.gold}10`, border: `1px solid ${c.gold}30`, fontSize: 12, color: c.goldL }}>
+    ⏳ Awaiting watcher confirmation — funds will be released to your MoMo after
+  </div>
+)}
                             {pay.status === "confirmed" && !callDone && !conf && !isDisputed && (
                               <MarkDoneBtn payId={pay.id} live={live} onMarkDone={onMarkDone} />
                             )}
@@ -449,7 +449,13 @@ export function DashboardView({
                                     </div>
                                   </div>
                                 </div>
-                                {callDone?.released && <div style={{ marginTop: 8, fontSize: 12, color: c.green }}>💸 Funds released to your MoMo</div>}
+                                {callDone?.released && (
+  <div style={{ marginTop: 8, fontSize: 12, color: c.green }}>
+    💸 {pay.status === "completed" ? "Funds released to your MoMo" : 
+        pay.status === "refunded" || pay.status === "refunded_partial" ? "Funds refunded to watcher" : 
+        "Funds will be released to your MoMo after confirmation"}
+  </div>
+)}
                                 {conf?.status === "auto_confirmed" && <div style={{ marginTop: 6, fontSize: 11, color: c.dim }}>🤖 Auto-confirmed after timeout</div>}
                                 {dispute && (dispute.status === "resolved_host" || dispute.status === "resolved_watcher") && (
                                   <div style={{ marginTop: 6, fontSize: 11, color: dispute.status === "resolved_host" ? c.green : c.red }}>

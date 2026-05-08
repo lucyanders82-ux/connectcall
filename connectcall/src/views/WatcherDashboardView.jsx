@@ -264,7 +264,7 @@ export function WatcherDashboardView({
     const formatCountdown = s => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
     const canCancel      = p.status === "pending" && !myConf && !myRefund && !myDispute;
-    const canEarlyRefund = p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && secondsLeft !== null && secondsLeft > 0;
+        const canEarlyRefund = p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at && secondsLeft !== null && secondsLeft > 0;
     const canDispute     = myConf?.status === "pending" && !isDone && !myRefund && !myDispute;
 
     // Determine card border color
@@ -400,7 +400,7 @@ export function WatcherDashboardView({
                 </div>
               )}
 
-              {p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && secondsLeft === 0 && (
+                            {p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at && secondsLeft === 0 && (
                 <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginTop: 8, width: "100%" }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>⏱ Contact window closed</div>
                   <div style={{ fontSize: 12, color: c.sub, lineHeight: 1.6, marginBottom: 10 }}>The 3-minute window has passed. If the host never contacted you, you can request a refund — admin will review within 24 hours.</div>

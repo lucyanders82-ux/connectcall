@@ -655,7 +655,7 @@ app.post('/api/call/mark-done', async (req, res) => {
     }]).select().single();
 
     // Watcher has 24 hours to confirm before auto-payout
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     const { data: confirmation } = await supabase.from('call_confirmations').insert([{
       payment_id: paymentId,
