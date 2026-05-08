@@ -66,14 +66,13 @@ export function DashboardView({
   // ── Dispute Banner for Host ────────────────────────────────────────────────
   const DisputeBanner = ({ dispute, payment }) => {
     const statusLabels = {
-      open:              { icon: "🔴", text: "Watcher disputes your call — submit evidence now", color: c.orange },
-      host_evidence:     { icon: "🟡", text: "You submitted evidence — waiting for watcher", color: c.gold },
-      watcher_evidence:  { icon: "🟡", text: "Both sides submitted — awaiting review", color: c.gold },
-      ai_verdict_pending:{ icon: "🤖", text: "AI is reviewing both screenshots…", color: c.blue },
-      resolved_host:     { icon: "✅", text: "Resolved in your favor — payment released", color: c.green },
-      resolved_watcher:  { icon: "❌", text: "Resolved in watcher's favor — refund processed", color: c.red },
-      escalated_admin:   { icon: "⏳", text: "Escalated to admin for manual review", color: c.orange },
-    };
+  open:              { icon: "⚠️", text: "Watcher disputes your call — upload evidence now", color: c.orange },
+  watcher_evidence:  { icon: "📤", text: "Evidence submitted — waiting for watcher response", color: c.gold },
+  ai_verdict_pending:{ icon: "🧠", text: "AI is analysing both screenshots…", color: c.blue },
+  resolved_host:     { icon: "🏆", text: "Resolved in your favor — payment released", color: c.green },
+  resolved_watcher:  { icon: "💸", text: "Resolved in watcher's favor — refund processed", color: c.red },
+  escalated_admin:   { icon: "🔍", text: "Escalated to admin — decision within 24hrs", color: c.orange },
+};
     const s = statusLabels[dispute?.status] || statusLabels.open;
 
     return (

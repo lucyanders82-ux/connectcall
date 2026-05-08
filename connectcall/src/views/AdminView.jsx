@@ -127,7 +127,7 @@ export function AdminView({
         <div onClick={() => toggleDispute(dispute.id)} style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", flexWrap: "wrap", gap: 10 }}>
           <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 18 }}>{isOpen ? "🔴" : isAI ? "🤖" : isEscalated ? "🚨" : isResolved ? "✅" : "⚪"}</span>
+                  <span style={{ fontSize: 18 }}>{isOpen ? "⚠️" : isAI ? "🧠" : isEscalated ? "🔍" : isResolved ? (dispute.status === "resolved_host" ? "🏆" : "💸") : "⚪"}</span>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>
                       {host?.name || "Host"} ←→ {watcher?.name || pay?.watcher_name || "Watcher"}
@@ -199,7 +199,7 @@ export function AdminView({
                 border: `1px solid ${dispute.ai_confidence >= 85 ? (dispute.ai_verdict === "host" ? c.green : c.red) : c.orange}30`,
               }}>
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: dispute.ai_verdict === "host" ? c.green : dispute.ai_verdict === "watcher" ? c.red : c.orange }}>
-                  🤖 AI Verdict: {dispute.ai_verdict === "inconclusive" ? "Inconclusive" : `Ruled for ${dispute.ai_verdict.toUpperCase()}`}
+                  🧠 AI Verdict: {dispute.ai_verdict === "inconclusive" ? "Inconclusive" : `Ruled for ${dispute.ai_verdict.toUpperCase()}`}
                   {" · "}{dispute.ai_confidence}% confidence
                 </div>
                 {dispute.ai_analysis && (
@@ -216,7 +216,7 @@ export function AdminView({
                   disabled={aiVerdictBusy[dispute.id]}
                   onClick={(e) => { e.stopPropagation(); handleTriggerAIVerdict(dispute.id); }}
                 >
-                  {aiVerdictBusy[dispute.id] ? "Running…" : "🤖 Run AI Verdict"}
+                  {aiVerdictBusy[dispute.id] ? "🧠 Analysing…" : "🧠 Run AI Verdict"}
                 </Btn>
                 <Btn
                   small variant="green"
