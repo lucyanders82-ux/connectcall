@@ -348,7 +348,7 @@ export default function App() {
     if (response === "yes") {
       toast("Call confirmed! Host has been paid ✦", "success");
     } else {
-      toast(result.message || "Dispute opened — host has 20 minutes to submit evidence", "warning");
+      toast("Dispute opened — host has 20 minutes to submit evidence of the call", "warning");
     }
 
     // Full refresh of all affected tables

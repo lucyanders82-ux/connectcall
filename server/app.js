@@ -788,7 +788,7 @@ app.post('/api/call/respond', async (req, res) => {
         console.error('[CallRespond] Notify host failed:', e.message);
       }
 
-      return res.json({ success: true, confirmed: false, disputeOpened: true, disputeId: dispute.id, message: 'Dispute opened — host has 20 minutes to submit evidence' });
+      return res.json({ success: true, confirmed: false, disputeOpened: true, disputeId: dispute.id, message: 'Dispute filed — host has 20 minutes to upload call evidence. If they fail, you get a refund automatically.' });
     }
 
     return res.status(400).json({ error: "Response must be 'yes' or 'no'" });
