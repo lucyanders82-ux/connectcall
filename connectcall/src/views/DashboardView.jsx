@@ -5,6 +5,7 @@ import { Btn, Modal, Field, Avatar, Chip, OnlineDot, SectionHeader, PhotoPick, M
 import { HostRating, HostResponseRate } from "../components/HostRating";
 import { MarkDoneBtn } from "../components/MarkDoneBtn";
 import { HostRefundRow } from "../components/HostRefundRow";
+import { supabase } from "../supabase";
 
 export function DashboardView({
   user, users, payments, calls, verifyPrompts, onMarkDone, onUpdate,
@@ -358,17 +359,33 @@ export function DashboardView({
                               const digits  = number.replace(/\D/g, "");
                               const intl    = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
                               const link    = platform === "Telegram" ? `https://t.me/+${intl}` : `https://wa.me/${intl}`;
+                              const hasInitiated = !!pay.call_initiated_at;
                               return (
                                 <div style={{ padding: "10px", borderRadius: 8, background: `${c.green}10`, border: `1px solid ${c.green}30` }}>
                                   <div style={{ fontSize: 12, fontWeight: 600, color: c.green, marginBottom: 4 }}>✓ Confirmed — Contacts Revealed</div>
                                   <a href={link} target="_blank" rel="noopener noreferrer"
+                                    onClick={async () => {
+                                      if (!hasInitiated) {
+                                        const { apiInitiateCall } = await import('../api.js');
+                                        await apiInitiateCall(pay.id, live.id);
+                                        // Refresh payment so call_initiated_at is set
+                                        const { data: pRows } = await supabase.from("payments").select("*").order("created_at", { ascending: false });
+                                      }
+                                    }}
                                     style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: platform === "Telegram" ? "#0088cc22" : "#25D36622", border: `1px solid ${platform === "Telegram" ? "#0088cc" : "#25D366"}`, textDecoration: "none", marginTop: 6 }}>
                                     <span style={{ fontSize: 20 }}>{platform === "Telegram" ? "✈️" : "💬"}</span>
                                     <div>
                                       <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 15, color: platform === "Telegram" ? "#0088cc" : "#25D366", fontWeight: 700 }}>{number}</div>
-                                      <div style={{ fontSize: 11, color: c.sub }}>Tap to call on {platform}</div>
+                                      <div style={{ fontSize: 11, color: c.sub }}>
+                                        {hasInitiated ? "✓ Call initiated — tap to call again" : "Tap to initiate call on " + platform}
+                                      </div>
                                     </div>
                                   </a>
+                                  {hasInitiated && (
+                                    <div style={{ fontSize: 11, color: c.green, marginTop: 6 }}>
+                                      ✓ Call initiated at {new Date(pay.call_initiated_at).toLocaleTimeString()}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })()}

@@ -165,8 +165,11 @@ export async function apiUploadEvidence(file, userId) {
   return urlData.signedUrl;
 }
 
-// Check expired windows (cron/polling)
-export async function apiCheckExpired() {
-  const res = await fetch(`${API_BASE}/api/pay/call/check-expired`);
+export async function apiInitiateCall(paymentId, hostId) {
+  const res = await fetch(`${API_BASE}/api/call/initiate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paymentId, hostId }),
+  });
   return res.json();
 }

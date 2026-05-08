@@ -8,7 +8,7 @@ import {
   apiInitializePayment, apiVerifyPayment, apiConfirmPayment,
   apiReleaseFunds, apiOnboardPayout, apiConfirmCall,
   apiDenyRefund, apiWatcherRefund, apiHostApproveRefund, apiAdminApproveRefund,
-  apiSubmitEvidence, apiRequestFollowup, apiAcceptFollowup, apiGetDispute,
+  apiSubmitEvidence, apiRequestFollowup, apiAcceptFollowup, apiGetDispute, apiInitiateCall,
 } from "./api";
 
 // ── shared UI ─────────────────────────────────────────────────────────────────

@@ -568,6 +568,43 @@ app.post('/api/host/approve-refund', async (req, res) => {
 //  CALL ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
+// POST /api/call/initiate — host clicks the contact link
+app.post('/api/call/initiate', async (req, res) => {
+  try {
+    const { paymentId, hostId } = req.body;
+    if (!paymentId || !hostId) return res.status(400).json({ error: 'paymentId and hostId required' });
+
+    const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
+    if (!pay) return res.status(404).json({ error: 'Payment not found' });
+    if (pay.target_user_id !== hostId) return res.status(403).json({ error: 'Unauthorized' });
+    if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not confirmed' });
+
+    // Only record first click
+    if (!pay.call_initiated_at) {
+      await supabase.from('payments').update({
+        call_initiated_at: new Date().toISOString(),
+      }).eq('id', paymentId);
+    }
+
+    // Notify watcher that host has initiated contact
+    try {
+      const { notifyWatcherCallInitiated } = await import('./services/notification.service.js');
+      if (pay.watcher_contact) {
+        await notifyWatcherCallInitiated(pay.watcher_contact, pay.watcher_name);
+      }
+    } catch (e) {
+      console.error('[Initiate] Notify failed:', e.message);
+    }
+
+    console.log(`[Initiate] Host ${hostId} clicked contact link for payment ${paymentId}`);
+    return res.json({ success: true, call_initiated_at: pay.call_initiated_at || new Date().toISOString() });
+
+  } catch (err) {
+    console.error('[Initiate] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/call/mark-done', async (req, res) => {
   try {
     const { paymentId, hostId } = req.body;
@@ -576,6 +613,24 @@ app.post('/api/call/mark-done', async (req, res) => {
     const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
+
+    if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
+
+    // Must have clicked the contact link first
+    if (!pay.call_initiated_at) {
+      return res.status(400).json({ error: 'You must initiate the call first by clicking the contact link' });
+    }
+
+    // Must wait at least 2 minutes after initiating
+    const msSinceInitiation = Date.now() - new Date(pay.call_initiated_at).getTime();
+    const MIN_CALL_MS = 2 * 60 * 1000;
+    if (msSinceInitiation < MIN_CALL_MS) {
+      const secondsLeft = Math.ceil((MIN_CALL_MS - msSinceInitiation) / 1000);
+      return res.status(400).json({ 
+        error: `Please wait ${secondsLeft} more seconds before marking the call as done`,
+        secondsLeft,
+      });
+    }
 
     // Check for active no-contact refund (watcher already cancelled)
     const { data: activeRefund } = await supabase

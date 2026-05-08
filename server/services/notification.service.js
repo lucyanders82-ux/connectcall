@@ -116,3 +116,16 @@ export async function notifyFollowupRequest(watcherContact, hostName) {
     console.error('[SMS] Follow-up notification failed:', err.message);
   }
 }
+export async function notifyWatcherCallInitiated(watcherContact, watcherName) {
+  try {
+    const to = formatGhanaNumber(watcherContact);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: Your host has initiated contact. Expect their call now on WhatsApp/Telegram.`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Watcher call initiated notified — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Watcher call initiated notification failed:', err.message);
+  }
+}

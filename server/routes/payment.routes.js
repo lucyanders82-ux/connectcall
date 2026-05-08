@@ -760,29 +760,28 @@ async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
                 type: 'text',
                 text: `You are an impartial dispute arbitrator for ConnectCall, a platform where watchers pay hosts for phone/video consultations.
 
-A dispute has been filed: The HOST claims they called the watcher and completed the consultation. The WATCHER claims no call was received.
+A dispute has been filed. The system has confirmed the host clicked the contact link (call was initiated). The WATCHER claims the call did not happen or was too short.
 
-You are shown two screenshots:
-- Image 1: The HOST's call log, which should show an OUTGOING call to the watcher's number
-- Image 2: The WATCHER's call log, which should show NO INCOMING call from the host's number during the booked window
+You are shown one screenshot:
+- The HOST's WhatsApp or Telegram call info screen, showing call details including duration
 
-Analyze both screenshots carefully:
-1. Check if Image 1 shows a genuine outgoing call with duration >= 2 minutes
-2. Check if Image 2 genuinely shows no incoming call from the host's number in the same timeframe
+Analyze the screenshot carefully:
+1. Check if it shows a genuine completed call
+2. Check if the call duration is AT LEAST 2 minutes
 3. Look for signs of editing: inconsistent fonts, misaligned UI elements, odd timestamps, cropped edges
 
 Return ONLY a JSON object (no other text) in this exact format:
 {
   "verdict": "host" | "watcher" | "inconclusive",
   "confidence": 0-100,
-  "analysis": "Brief explanation of what you observed in both screenshots and why you reached this conclusion. 2-3 sentences max."
+  "analysis": "Brief explanation of what you observed and why you reached this conclusion. 2-3 sentences max."
 }
 
 RULES:
-- verdict "host" = Image 1 is convincing and Image 2 is absent/weak -> host wins
-- verdict "watcher" = Image 1 is weak/absent and Image 2 convincingly shows no call -> watcher wins
-- verdict "inconclusive" = evidence is contradictory, unreadable, or both sides are equally convincing
-- confidence >= 85 only if the evidence is VERY clear (obvious genuine screenshot on one side, obvious absence/fake on other)
+- verdict "host" = screenshot shows genuine call with duration >= 2 minutes
+- verdict "watcher" = screenshot shows call duration < 2 minutes, no call, or appears edited
+- verdict "inconclusive" = screenshot is unreadable, cropped, or impossible to verify
+- confidence >= 85 only if the evidence is VERY clear
 - If you detect likely editing/fakery, note it in analysis and reduce confidence significantly`,
               },
               {

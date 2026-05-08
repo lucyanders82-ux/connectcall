@@ -210,7 +210,7 @@ export function WatcherDashboardView({
     }, [followup?.expires_at]);
 
     if (isExpired) return null;
-    
+
     return (
       <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginBottom: 8 }}>
         <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>
@@ -329,14 +329,18 @@ export function WatcherDashboardView({
             return (
               <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.green}10`, border: `1px solid ${c.green}30`, marginBottom: 10 }}>
                 <div style={{ fontSize: 11, color: c.green, marginBottom: 3 }}>✓ Host Contact</div>
-                <a href={link} target="_blank" rel="noopener noreferrer"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: platform === "Telegram" ? "#0088cc22" : "#25D36622", border: `1px solid ${platform === "Telegram" ? "#0088cc" : "#25D366"}`, textDecoration: "none", marginTop: 6 }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 10, background: platform === "Telegram" ? "#0088cc22" : "#25D36622", border: `1px solid ${platform === "Telegram" ? "#0088cc" : "#25D366"}`, marginTop: 6 }}>
                   <span style={{ fontSize: 20 }}>{platform === "Telegram" ? "✈️" : "💬"}</span>
                   <div>
                     <div style={{ fontFamily: "'DM Mono',monospace", fontSize: 15, color: platform === "Telegram" ? "#0088cc" : "#25D366", fontWeight: 700 }}>{number}</div>
-                    <div style={{ fontSize: 11, color: c.sub }}>Tap to call on {platform}</div>
+                    <div style={{ fontSize: 11, color: c.sub }}>Host will contact you on {platform}</div>
                   </div>
-                </a>
+                </div>
+                {p.call_initiated_at && (
+                  <div style={{ fontSize: 12, color: c.green, marginTop: 8, padding: "6px 10px", borderRadius: 8, background: `${c.green}10` }}>
+                    📞 Host has initiated contact — expect their call now
+                  </div>
+                )}
               </div>
             );
           })()}
