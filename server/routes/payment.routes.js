@@ -861,12 +861,18 @@ async function resolveDisputeOutcome(disputeId, verdict) {
 
   if (!dispute) return;
 
+  // Don't re-process already resolved disputes
+  if (dispute.status === 'resolved_host' || dispute.status === 'resolved_watcher') {
+    console.log(`[ResolveDispute] Dispute ${disputeId} already resolved — skipping`);
+    return;
+  }
+
   const payment = dispute.payment;
   const totalPaid = parseFloat(payment.total_charged || payment.amount);
   const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
+  const now = new Date().toISOString();
 
   if (verdict === 'watcher') {
-    // Refund watcher
     if (payment.paystack_ref) {
       try {
         await paystackRequest('POST', '/refund', {
@@ -882,20 +888,32 @@ async function resolveDisputeOutcome(disputeId, verdict) {
     await supabase.from('refund_requests').update({
       status: 'approved',
       refund_amount: refundAmount,
-      resolved_at: new Date().toISOString(),
+      resolved_at: now,
       auto_refunded: true,
       refund_percentage: EARLY_REFUND_PCT,
     }).eq('dispute_id', disputeId);
 
+    // UPDATE THE DISPUTE STATUS
+    await supabase.from('disputes').update({
+      status: 'resolved_watcher',
+      resolved_at: now,
+      resolved_by: 'auto_timeout',
+    }).eq('id', disputeId);
+
   } else if (verdict === 'host') {
-    // Release payment to host
     await supabase.from('payments').update({ status: 'completed' }).eq('id', payment.id);
     await supabase.from('refund_requests').update({
       status: 'rejected',
-      resolved_at: new Date().toISOString(),
+      resolved_at: now,
     }).eq('dispute_id', disputeId);
 
-    // Trigger payout
+    // UPDATE THE DISPUTE STATUS
+    await supabase.from('disputes').update({
+      status: 'resolved_host',
+      resolved_at: now,
+      resolved_by: 'auto_timeout',
+    }).eq('id', disputeId);
+
     try {
       const { processHostPayout } = await import('../services/payment.service.js');
       await processHostPayout(payment);
