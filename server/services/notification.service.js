@@ -129,3 +129,17 @@ export async function notifyWatcherCallInitiated(watcherContact, watcherName) {
     console.error('[SMS] Watcher call initiated notification failed:', err.message);
   }
 }
+
+export async function notifyHostFinalWarning(hostContact, watcherName) {
+  try {
+    const to = formatGhanaNumber(hostContact);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: ${watcherName} is waiting for your call. You have 10 minutes to initiate contact or the booking will be cancelled and refunded. Log in now: connectcall.vercel.app`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Host final warning — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Host final warning failed:', err.message);
+  }
+}

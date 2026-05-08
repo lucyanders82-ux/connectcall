@@ -1143,6 +1143,32 @@ router.get('/call/check-expired', async (req, res) => {
       console.log(`[CheckExpired] Auto-resolved ${staleDisputes.length} disputes in watcher's favor`);
     }
 
+        // Notify host at 3-min mark if they haven't initiated call
+    const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    const fourMinsAgo = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+    const { data: warnPayments } = await supabase
+      .from('payments')
+      .select('id, target_user_id, watcher_name')
+      .eq('status', 'confirmed')
+      .is('call_initiated_at', null)
+      .lt('contact_revealed_at', threeMinsAgo)
+      .gt('contact_revealed_at', fourMinsAgo); // Only catch payments in the 3-4 min window
+
+    if (warnPayments?.length) {
+      for (const p of warnPayments) {
+        const { data: host } = await supabase.from('users').select('contact_number').eq('id', p.target_user_id).single();
+        if (host?.contact_number) {
+          try {
+            const { notifyHostFinalWarning } = await import('../services/notification.service.js');
+            await notifyHostFinalWarning(host.contact_number, p.watcher_name);
+          } catch (e) {
+            console.error('[WarnHost] SMS failed:', e.message);
+          }
+        }
+      }
+      console.log(`[CheckExpired] Warned ${warnPayments.length} hosts at 3-min mark`);
+    }
+
     // NEW: Auto-refund payments where 3 hours passed, host never clicked link, never marked done
         const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const { data: abandonedPayments } = await supabase

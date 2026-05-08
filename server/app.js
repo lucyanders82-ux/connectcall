@@ -578,6 +578,13 @@ app.post('/api/call/initiate', async (req, res) => {
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
     if (pay.target_user_id !== hostId) return res.status(403).json({ error: 'Unauthorized' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not confirmed' });
+        // Freeze after 10 minutes from contact reveal
+    if (pay.contact_revealed_at) {
+      const msSinceReveal = Date.now() - new Date(pay.contact_revealed_at).getTime();
+      if (msSinceReveal > 10 * 60 * 1000) {
+        return res.status(400).json({ error: 'Contact window expired — booking will be cancelled' });
+      }
+    }
 
         const { data: activeRefund } = await supabase
       .from('refund_requests')
@@ -621,6 +628,13 @@ app.post('/api/call/mark-done', async (req, res) => {
     const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
+        // Freeze after 10 minutes from contact reveal
+    if (pay.contact_revealed_at) {
+      const msSinceReveal = Date.now() - new Date(pay.contact_revealed_at).getTime();
+      if (msSinceReveal > 10 * 60 * 1000) {
+        return res.status(400).json({ error: 'Contact window expired — booking has been cancelled' });
+      }
+    }
         const { data: activeRefund } = await supabase
       .from('refund_requests')
       .select('id')

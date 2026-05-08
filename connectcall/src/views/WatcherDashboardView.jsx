@@ -413,7 +413,7 @@ export function WatcherDashboardView({
               })() && (
                 <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginTop: 8, width: "100%" }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>⏱ Contact window closed</div>
-                  <div style={{ fontSize: 12, color: c.sub, lineHeight: 1.6 }}>The 3-minute window has passed and the host did not initiate contact. Your refund will be processed automatically within 15 minutes.</div>
+                                    <div style={{ fontSize: 12, color: c.sub, lineHeight: 1.6 }}>The 3-minute window has passed and the host did not initiate contact. The host has been notified and has 10 minutes to call before the booking is cancelled. If no action is taken, your refund will be processed automatically within 15 minutes.</div>
                 </div>
               )}
             </div>
