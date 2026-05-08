@@ -765,17 +765,53 @@ async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
             content: [
               {
                 type: 'text',
-                text: `You are an impartial dispute arbitrator for ConnectCall, a platform where watchers pay hosts for phone/video consultations.
+                                text: `You are an impartial dispute arbitrator for ConnectCall, a platform where watchers pay hosts for phone/video consultations in Ghana.
 
 A dispute has been filed. The system has confirmed the host clicked the contact link (call was initiated). The WATCHER claims the call did not happen or was too short.
 
-You are shown one screenshot:
-- The HOST's WhatsApp or Telegram call info screen, showing call details including duration
+You are shown TWO screenshots of call logs from either WhatsApp or Telegram.
 
-Analyze the screenshot carefully:
-1. Check if it shows a genuine completed call
-2. Check if the call duration is AT LEAST 2 minutes
-3. Look for signs of editing: inconsistent fonts, misaligned UI elements, odd timestamps, cropped edges
+═══════════════════════════════════════
+WHAT TO LOOK FOR — WhatsApp Call Log
+═══════════════════════════════════════
+
+A genuine WhatsApp call info screen shows:
+- A phone icon (📞) or video icon at the top
+- The contact's name or phone number in BOLD at the top
+- "Outgoing voice call" or "Incoming voice call" label
+- Call duration displayed prominently (e.g., "5:23" meaning 5 minutes 23 seconds)
+- Date and time of the call (e.g., "Today at 2:15 PM" or "May 7, 2026 at 2:15 PM")
+- The WhatsApp green header bar at the top
+- Usually shows "Voice call" or "Video call" in smaller text
+
+A genuine Telegram call info screen shows:
+- The contact's name at the top
+- "Outgoing voice call" or "Incoming voice call"
+- Call duration (e.g., "5 minutes 23 seconds" or "5:23")
+- Date and time
+- Telegram's dark or blue theme interface
+
+═══════════════════════════════════════
+SIGNS OF A FAKE OR EDITED SCREENSHOT
+═══════════════════════════════════════
+- Inconsistent fonts (different from WhatsApp/Telegram's standard font)
+- Misaligned text or UI elements
+- Blurry or pixelated areas around the call duration
+- Odd timestamps that don't make sense
+- Cropped edges that hide parts of the screen
+- Screenshot from a different app pretending to be WhatsApp
+- Colors that don't match WhatsApp green or Telegram blue
+- If the screenshot looks like it was taken from a web browser instead of the app
+
+═══════════════════════════════════════
+JUDGMENT RULES
+═══════════════════════════════════════
+
+1. The HOST's screenshot should show an OUTGOING call to the watcher's number
+2. The WATCHER's screenshot should show NO incoming call from the host's number during the booked window
+3. Call duration must be AT LEAST 2 MINUTES for the host to win
+4. If the host's screenshot shows duration < 2 minutes → verdict = "watcher"
+5. If either screenshot appears edited → verdict = "watcher", confidence high
 
 Return ONLY a JSON object (no other text) in this exact format:
 {
@@ -785,11 +821,12 @@ Return ONLY a JSON object (no other text) in this exact format:
 }
 
 RULES:
-- verdict "host" = screenshot shows genuine call with duration >= 2 minutes
-- verdict "watcher" = screenshot shows call duration < 2 minutes, no call, or appears edited
-- verdict "inconclusive" = screenshot is unreadable, cropped, or impossible to verify
-- confidence >= 85 only if the evidence is VERY clear
-- If you detect likely editing/fakery, note it in analysis and reduce confidence significantly`,
+- verdict "host" = host's screenshot shows genuine outgoing call with duration >= 2 minutes AND watcher's screenshot is absent/weak
+- verdict "watcher" = host's screenshot missing, shows call < 2 minutes, appears edited, OR watcher's screenshot convincingly shows no call
+- verdict "inconclusive" = both screenshots are equally convincing, unreadable, or impossible to verify
+- confidence >= 85 only if the evidence is VERY clear (obvious genuine screenshot on one side, obvious absence/fake on other)
+- If you detect likely editing/fakery, note it in analysis and reduce confidence significantly
+- IMPORTANT: You are the final arbiter. Be decisive when the evidence is clear.`,
               },
               {
                 type: 'image',
