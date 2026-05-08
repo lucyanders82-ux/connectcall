@@ -71,8 +71,8 @@ export function WatcherDashboardView({
   const DisputeBanner = ({ dispute, paymentId }) => {
     const statusLabels = {
       open:              { icon: "🔴", text: "Dispute opened — waiting for host evidence", color: c.orange },
-      host_evidence:     { icon: "🟡", text: "Host submitted evidence — your turn to respond", color: c.gold },
-      watcher_evidence:  { icon: "🟡", text: "Counter-evidence submitted — awaiting AI review", color: c.gold },
+      watcher_evidence:  { icon: "🟡", text: "Host submitted evidence — your turn to respond", color: c.gold },
+      ai_verdict_pending:{ icon: "🤖", text: "AI is reviewing both screenshots…", color: c.blue },
       ai_verdict_pending:{ icon: "🤖", text: "AI is reviewing both screenshots…", color: c.blue },
       resolved_host:     { icon: "✅", text: "Resolved in host's favor — payment released", color: c.green },
       resolved_watcher:  { icon: "✅", text: "Resolved in your favor — refund processed", color: c.green },
@@ -95,7 +95,7 @@ export function WatcherDashboardView({
           </div>
         )}
         {/* Show upload button if watcher needs to submit evidence */}
-        {dispute?.status === "host_evidence" && 
+        {dispute?.status === "watcher_evidence" && 
          !dispute?.watcher_evidence_url &&
          !dispute?.status?.startsWith("resolved") && (
           <EvidenceUploadButton

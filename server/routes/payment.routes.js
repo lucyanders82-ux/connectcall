@@ -1145,14 +1145,15 @@ router.get('/call/check-expired', async (req, res) => {
 
         // Notify host at 3-min mark if they haven't initiated call
     const threeMinsAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
-    const fourMinsAgo = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+const fourMinsAgo = new Date(Date.now() - 7 * 60 * 1000).toISOString();
     const { data: warnPayments } = await supabase
       .from('payments')
       .select('id, target_user_id, watcher_name')
       .eq('status', 'confirmed')
       .is('call_initiated_at', null)
+      .is('host_warned_at', null)
       .lt('contact_revealed_at', threeMinsAgo)
-      .gt('contact_revealed_at', fourMinsAgo); // Only catch payments in the 3-4 min window
+      .gt('contact_revealed_at', fourMinsAgo);
 
     if (warnPayments?.length) {
       for (const p of warnPayments) {
@@ -1161,6 +1162,7 @@ router.get('/call/check-expired', async (req, res) => {
           try {
             const { notifyHostFinalWarning } = await import('../services/notification.service.js');
             await notifyHostFinalWarning(host.contact_number, p.watcher_name);
+            await supabase.from('payments').update({ host_warned_at: new Date().toISOString() }).eq('id', p.id);
           } catch (e) {
             console.error('[WarnHost] SMS failed:', e.message);
           }
@@ -1179,6 +1181,7 @@ router.get('/call/check-expired', async (req, res) => {
             .lt('contact_revealed_at', fifteenMinsAgo);
 
     let autoRefunded = 0;
+    console.log(`[CheckExpired] Abandoned payments found: ${abandonedPayments?.length || 0}`);
     if (abandonedPayments?.length) {
       for (const p of abandonedPayments) {
         const { data: pay } = await supabase.from('payments').select('*').eq('id', p.id).single();
