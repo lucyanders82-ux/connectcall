@@ -613,6 +613,18 @@ if (role === 'watcher' && payment.watcher_id !== userId) {
         message: 'Watcher submitted counter-evidence. AI analysis will now review both screenshots.',
       }]);
 
+// Notify both that AI is reviewing
+      try {
+        const { data: payment } = await supabase.from('payments').select('target_user_id, watcher_contact').eq('id', dispute.payment_id).single();
+        const { data: host } = await supabase.from('users').select('contact_number').eq('id', payment.target_user_id).single();
+        if (host?.contact_number && payment?.watcher_contact) {
+          const { notifyBothAIReviewing } = await import('../services/notification.service.js');
+          await notifyBothAIReviewing(host.contact_number, payment.watcher_contact);
+        }
+      } catch (e) {
+        console.error('[AI] Notify reviewing failed:', e.message);
+      }
+      
       // Trigger AI verdict (async — we respond immediately)
       triggerAIVerdict(disputeId).catch(e => {
         console.error('[AI Verdict] Async trigger failed:', e.message);
@@ -706,6 +718,23 @@ async function triggerAIVerdict(disputeId) {
     sender_role: 'system',
     message: verdictMessage,
   }]);
+
+  // Notify both parties
+  try {
+    const { data: payment } = await supabase.from('payments').select('target_user_id, watcher_contact').eq('id', dispute.payment_id).single();
+    const { data: host } = await supabase.from('users').select('contact_number').eq('id', payment.target_user_id).single();
+    if (host?.contact_number && payment?.watcher_contact) {
+      if (aiResult.confidence >= 85) {
+        const { notifyBothAIVerdict } = await import('../services/notification.service.js');
+        await notifyBothAIVerdict(host.contact_number, payment.watcher_contact, aiResult.verdict, aiResult.confidence);
+      } else {
+        const { notifyBothEscalated } = await import('../services/notification.service.js');
+        await notifyBothEscalated(host.contact_number, payment.watcher_contact);
+      }
+    }
+  } catch (e) {
+    console.error('[AI] Notify verdict failed:', e.message);
+  }
 
   // If auto-resolved, process the outcome
   if (aiResult.confidence >= 85) {

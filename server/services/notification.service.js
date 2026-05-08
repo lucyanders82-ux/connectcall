@@ -143,3 +143,53 @@ export async function notifyHostFinalWarning(hostContact, watcherName) {
     console.error('[SMS] Host final warning failed:', err.message);
   }
 }
+
+export async function notifyBothAIReviewing(hostContact, watcherContact) {
+  try {
+    const hostTo = formatGhanaNumber(hostContact);
+    const watcherTo = formatGhanaNumber(watcherContact);
+    await sms.send({
+      to: [hostTo, watcherTo],
+      message: `ConnectCall: Both sides have submitted evidence. AI is now reviewing your dispute. This usually takes under 2 minutes. You will be notified of the verdict.`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] AI reviewing notified — ${hostTo}, ${watcherTo}`);
+  } catch (err) {
+    console.error('[SMS] AI reviewing notification failed:', err.message);
+  }
+}
+
+export async function notifyBothAIVerdict(hostContact, watcherContact, verdict, confidence) {
+  try {
+    const hostTo = formatGhanaNumber(hostContact);
+    const watcherTo = formatGhanaNumber(watcherContact);
+    const resultText = verdict === 'host'
+      ? 'Resolved in HOST favor — payment released to host.'
+      : verdict === 'watcher'
+        ? 'Resolved in WATCHER favor — 70% refund processed.'
+        : 'AI could not reach a verdict — escalated to admin.';
+    await sms.send({
+      to: [hostTo, watcherTo],
+      message: `ConnectCall: Dispute verdict — ${resultText} AI confidence: ${confidence}%. Log in for details: connectcall.vercel.app`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] AI verdict notified — ${hostTo}, ${watcherTo}`);
+  } catch (err) {
+    console.error('[SMS] AI verdict notification failed:', err.message);
+  }
+}
+
+export async function notifyBothEscalated(hostContact, watcherContact) {
+  try {
+    const hostTo = formatGhanaNumber(hostContact);
+    const watcherTo = formatGhanaNumber(watcherContact);
+    await sms.send({
+      to: [hostTo, watcherTo],
+      message: `ConnectCall: Your dispute has been escalated to admin for manual review. Admin has 24 hours to decide. You will be notified of the outcome. connectcall.vercel.app`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Escalation notified — ${hostTo}, ${watcherTo}`);
+  } catch (err) {
+    console.error('[SMS] Escalation notification failed:', err.message);
+  }
+}
