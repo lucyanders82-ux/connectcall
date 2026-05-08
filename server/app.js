@@ -579,6 +579,14 @@ app.post('/api/call/initiate', async (req, res) => {
     if (pay.target_user_id !== hostId) return res.status(403).json({ error: 'Unauthorized' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not confirmed' });
 
+        const { data: activeRefund } = await supabase
+      .from('refund_requests')
+      .select('id')
+      .eq('payment_id', paymentId)
+      .in('status', ['pending', 'pending_host'])
+      .single();
+    if (activeRefund) return res.status(400).json({ error: 'Cannot initiate — an active refund request exists' });
+
     // Only record first click
     if (!pay.call_initiated_at) {
       await supabase.from('payments').update({
@@ -613,8 +621,13 @@ app.post('/api/call/mark-done', async (req, res) => {
     const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
-
-    if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
+        const { data: activeRefund } = await supabase
+      .from('refund_requests')
+      .select('id')
+      .eq('payment_id', paymentId)
+      .in('status', ['pending', 'pending_host'])
+      .single();
+    if (activeRefund) return res.status(400).json({ error: 'Cannot mark done — an active refund request exists' });
 
     // Must have clicked the contact link first
     if (!pay.call_initiated_at) {

@@ -353,7 +353,7 @@ export function DashboardView({
                                 🔒 Contacts hidden — waiting for admin confirmation
                               </div>
                             )}
-                            {pay.status === "confirmed" && !isDisputed && (() => {
+                                                        {pay.status === "confirmed" && !isDisputed && !refund && (() => {
                               const number  = pay.watcher_contact || "";
                               const platform = pay.watcher_platform || "WhatsApp";
                               const digits  = number.replace(/\D/g, "");
@@ -394,7 +394,7 @@ export function DashboardView({
     ⏳ Awaiting watcher confirmation — funds will be released to your MoMo after
   </div>
 )}
-                            {pay.status === "confirmed" && !callDone && !conf && !isDisputed && (
+                                                        {pay.status === "confirmed" && !callDone && !conf && !isDisputed && !refund && (
                               <MarkDoneBtn payId={pay.id} live={live} onMarkDone={onMarkDone} />
                             )}
                           </div>

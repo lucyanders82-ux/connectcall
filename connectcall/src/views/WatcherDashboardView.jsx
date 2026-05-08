@@ -251,15 +251,21 @@ export function WatcherDashboardView({
     const [refunding,  setRefunding]  = useState(false);
     const [secondsLeft, setSecondsLeft] = useState(null);
 
-    useEffect(() => {
-      if (p.status !== "confirmed" || !p.contact_revealed_at || myRefund || myConf || isDone || myDispute) { setSecondsLeft(null); return; }
+        useEffect(() => {
+      if (p.status !== "confirmed" || !p.contact_revealed_at || myRefund || myConf || isDone || myDispute || p.call_initiated_at) { 
+        setSecondsLeft(null); 
+        return; 
+      }
       const revealedAt = new Date(p.contact_revealed_at).getTime();
       const WINDOW_MS  = 3 * 60 * 1000;
-      const tick = () => setSecondsLeft(Math.max(0, Math.round((revealedAt + WINDOW_MS - Date.now()) / 1000)));
+      const tick = () => {
+        const remaining = Math.max(0, Math.round((revealedAt + WINDOW_MS - Date.now()) / 1000));
+        setSecondsLeft(remaining);
+      };
       tick();
       const interval = setInterval(tick, 1000);
       return () => clearInterval(interval);
-    }, [p.contact_revealed_at, p.status, myRefund, myConf, isDone, myDispute]);
+    }, [p.contact_revealed_at, p.status, myRefund, myConf, isDone, myDispute, p.call_initiated_at]);
 
     const formatCountdown = s => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
