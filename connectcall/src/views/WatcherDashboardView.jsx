@@ -406,10 +406,14 @@ export function WatcherDashboardView({
                 </div>
               )}
 
-                            {p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at && secondsLeft === 0 && (
+                                                        {p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at && (() => {
+                const revealedAt = p.contact_revealed_at ? new Date(p.contact_revealed_at).getTime() : null;
+                const expired = revealedAt && (Date.now() - revealedAt > 3 * 60 * 1000);
+                return expired;
+              })() && (
                 <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginTop: 8, width: "100%" }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>⏱ Contact window closed</div>
-                  <div style={{ fontSize: 12, color: c.sub, lineHeight: 1.6, marginBottom: 10 }}>The 3-minute window has passed. If the host never contacted you, you can request a refund — admin will review within 24 hours.</div>
+                  <div style={{ fontSize: 12, color: c.sub, lineHeight: 1.6, marginBottom: 10 }}>The 3-minute window has passed. If the host never contacted you, you can request a refund.</div>
                   <Btn small variant="orange" disabled={refunding} onClick={async () => { setRefunding(true); await onRefundRequest(p.id, "Host did not contact watcher after contact window closed"); setRefunding(false); }} full>
                     {refunding ? "Requesting…" : "↩ Request Refund — host didn't contact me"}
                   </Btn>
