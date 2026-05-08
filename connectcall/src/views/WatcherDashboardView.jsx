@@ -265,7 +265,7 @@ export function WatcherDashboardView({
 
     const canCancel      = p.status === "pending" && !myConf && !myRefund && !myDispute;
         const canEarlyRefund = p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at && secondsLeft !== null && secondsLeft > 0;
-    const canDispute     = myConf?.status === "pending" && !isDone && !myRefund && !myDispute;
+        const canDispute     = false; // Dispute is now handled by the confirm/dispute poll at the top, not per-card
 
     // Determine card border color
     const borderColor = isDone ? c.green
@@ -408,12 +408,6 @@ export function WatcherDashboardView({
                     {refunding ? "Requesting…" : "↩ Request Refund — host didn't contact me"}
                   </Btn>
                 </div>
-              )}
-
-              {canDispute && (
-                <Btn small variant="red" disabled={refunding} onClick={async () => { setRefunding(true); await onRefundRequest(p.id, "Watcher disputed call completion"); setRefunding(false); }}>
-                  {refunding ? "Filing…" : "✕ Dispute — call didn't happen"}
-                </Btn>
               )}
             </div>
           )}
