@@ -645,18 +645,6 @@ app.post('/api/call/mark-done', async (req, res) => {
       });
     }
 
-    // Check for active no-contact refund (watcher already cancelled)
-    const { data: activeRefund } = await supabase
-      .from('refund_requests')
-      .select('id, status, refund_type')
-      .eq('payment_id', paymentId)
-      .in('status', ['pending', 'pending_host', 'approved'])
-      .single();
-
-    if (activeRefund) {
-      return res.status(400).json({ error: 'Watcher has an active refund request for this payment' });
-    }
-
     const { data: existing } = await supabase
       .from('call_confirmations').select('id').eq('payment_id', paymentId).single();
     if (existing) return res.json({ success: true, alreadyMarked: true });
@@ -667,7 +655,7 @@ app.post('/api/call/mark-done', async (req, res) => {
       released: false,
     }]).select().single();
 
-    // Watcher has 24 hours to confirm before auto-payout
+        // Watcher has 10 minutes to confirm before auto-payout
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     const { data: confirmation } = await supabase.from('call_confirmations').insert([{
