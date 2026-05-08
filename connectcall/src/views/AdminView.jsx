@@ -225,7 +225,7 @@ export function AdminView({
                     e.stopPropagation();
                     setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: true }));
                     try {
-                      const res = await fetch(`${import.meta.env.VITE_API_BASE}/api/admin/resolve-dispute`, {
+                      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:4000"}/api/admin/resolve-dispute`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
                         body: JSON.stringify({ disputeId: dispute.id, verdict: "host" }),
@@ -246,7 +246,7 @@ export function AdminView({
                     e.stopPropagation();
                     setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: true }));
                     try {
-                      const res = await fetch(`${import.meta.env.VITE_API_BASE}/api/admin/resolve-dispute`, {
+                      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:4000"}/api/admin/resolve-dispute`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json", "x-admin-token": ADMIN_TOKEN },
                         body: JSON.stringify({ disputeId: dispute.id, verdict: "watcher" }),
