@@ -1144,13 +1144,13 @@ router.get('/call/check-expired', async (req, res) => {
     }
 
     // NEW: Auto-refund payments where 3 hours passed, host never clicked link, never marked done
-    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const { data: abandonedPayments } = await supabase
       .from('payments')
       .select('id')
       .eq('status', 'confirmed')
       .is('call_initiated_at', null)
-      .lt('contact_revealed_at', threeHoursAgo);
+            .lt('contact_revealed_at', fifteenMinsAgo);
 
     let autoRefunded = 0;
     if (abandonedPayments?.length) {
@@ -1172,12 +1172,12 @@ router.get('/call/check-expired', async (req, res) => {
           await supabase.from('payments').update({ status: 'refunded_partial' }).eq('id', pay.id);
           await supabase.from('refund_requests').insert([{
             payment_id: pay.id,
-            reason: 'Auto-refunded — host never initiated call within 3 hours',
+                        reason: 'Auto-refunded — host never initiated call within 15 minutes',
             status: 'approved',
             watcher_id: pay.watcher_id,
             watcher_name: pay.watcher_name,
             refund_amount: refundAmount,
-            refund_type: 'auto_3_hour',
+                        refund_type: 'auto_15_min',
             resolved_at: new Date().toISOString(),
             auto_refunded: true,
             refund_percentage: EARLY_REFUND_PCT,
