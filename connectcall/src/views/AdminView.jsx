@@ -562,7 +562,18 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
           <div>
             <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, marginBottom: 18 }}>Refund Requests</div>
             {refundReqs.length === 0 && <div style={{ color: c.sub, textAlign: "center", padding: "40px 0" }}>No refund requests.</div>}
-            {refundReqs.map(r => {
+
+            {/* Pending refunds — always visible */}
+            {pendingRefunds.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.orange, display: "inline-block", animation: "pulse 2s infinite" }} />
+                  <div style={{ fontWeight: 600, color: c.orange, fontSize: 14 }}>Pending Review ({pendingRefunds.length})</div>
+                </div>
+              </div>
+            )}
+
+            {refundReqs.filter(r => r.status === "pending" || r.status === "pending_host").map(r => {
               const pay  = payments.find(p => p.id === r.payment_id);
               const host = users.find(u => u.id === pay?.target_user_id);
               const isDispute = r.reason?.toLowerCase().includes("call did not") || r.reason?.toLowerCase().includes("dispute") || r.refund_type === "dispute" || r.refund_type === "dispute_evidence";
@@ -621,6 +632,49 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
                 </div>
               );
             })}
+          {/* Resolved / denied refunds — collapsed in folder */}
+            {refundReqs.filter(r => r.status === "approved" || r.status === "denied" || r.status === "rejected").length > 0 && (() => {
+              const resolved = refundReqs.filter(r => r.status === "approved" || r.status === "denied" || r.status === "rejected");
+              return (
+                <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden", marginTop: 12 }}>
+                  <div onClick={() => setAdminPayOpen(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                    onMouseEnter={e => e.currentTarget.style.background = c.surface}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 18 }}>📁</span>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>Resolved Refunds</div>
+                        <div style={{ color: c.sub, fontSize: 12 }}>{resolved.length} refund{resolved.length !== 1 ? "s" : ""}</div>
+                      </div>
+                    </div>
+                    <span style={{ color: c.sub, fontSize: 18 }}>{adminPayOpen ? "▲" : "▼"}</span>
+                  </div>
+                  {adminPayOpen && (
+                    <div style={{ padding: "0 12px 12px" }}>
+                      {resolved.map(r => {
+                        const pay  = payments.find(p => p.id === r.payment_id);
+                        const host = users.find(u => u.id === pay?.target_user_id);
+                        const isDispute = r.refund_type === "dispute" || r.refund_type === "dispute_evidence";
+                        const isApproved = r.status === "approved";
+                        const isDenied = r.status === "denied" || r.status === "rejected";
+                        return (
+                          <div key={r.id} style={{ background: c.surface, border: `1px solid ${isApproved ? `${c.green}30` : `${c.red}30`}`, borderRadius: 10, padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 13 }}>{r.watcher_name} → {host?.name || "Host"}</div>
+                              <div style={{ fontSize: 11, color: c.sub, marginTop: 2 }}>{r.refund_type || "Manual"} · {new Date(r.created_at).toLocaleDateString()}{isDispute ? " · ⚠️ Dispute" : ""}</div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.goldL }}>{S}{r.refund_amount || pay?.total_charged || 0}</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: isApproved ? c.green : c.red }}>{isApproved ? "✅ Approved" : "❌ Denied"}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -653,18 +707,28 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               </div>
             )}
 
-            {/* Resolved disputes */}
+            {/* Resolved disputes — collapsed folder */}
             {resolvedDisputes.length > 0 && (
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <span style={{ fontSize: 16 }}>📁</span>
-                  <div style={{ fontWeight: 600, color: c.sub, fontSize: 14 }}>Resolved Disputes ({resolvedDisputes.length})</div>
+              <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden" }}>
+                <div onClick={() => setShowPayHistory(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                  onMouseEnter={e => e.currentTarget.style.background = c.surface}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>📁</span>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>Resolved Disputes</div>
+                      <div style={{ color: c.sub, fontSize: 12 }}>{resolvedDisputes.length} dispute{resolvedDisputes.length !== 1 ? "s" : ""}</div>
+                    </div>
+                  </div>
+                  <span style={{ color: c.sub, fontSize: 18 }}>{showPayHistory ? "▲" : "▼"}</span>
                 </div>
-                {resolvedDisputes.map(d => renderDisputeCard(d))}
+                {showPayHistory && (
+                  <div style={{ padding: "0 12px 12px" }}>
+                    {resolvedDisputes.map(d => renderDisputeCard(d))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
 
         {/* ── Reports ── */}
         {tab === "reports" && (
