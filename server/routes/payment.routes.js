@@ -624,7 +624,7 @@ if (role === 'watcher' && payment.watcher_id !== userId) {
       } catch (e) {
         console.error('[AI] Notify reviewing failed:', e.message);
       }
-      
+
       // Trigger AI verdict (async — we respond immediately)
       triggerAIVerdict(disputeId).catch(e => {
         console.error('[AI Verdict] Async trigger failed:', e.message);
@@ -1202,12 +1202,23 @@ const fourMinsAgo = new Date(Date.now() - 7 * 60 * 1000).toISOString();
 
     // NEW: Auto-refund payments where 3 hours passed, host never clicked link, never marked done
         const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const { data: abandonedPayments } = await supabase
-      .from('payments')
-      .select('id')
-      .eq('status', 'confirmed')
-      .is('call_initiated_at', null)
-            .lt('contact_revealed_at', fifteenMinsAgo);
+const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+// Abandoned — host never clicked link after 15 mins
+const { data: abandonedPayments } = await supabase
+  .from('payments')
+  .select('id')
+  .eq('status', 'confirmed')
+  .is('call_initiated_at', null)
+  .lt('contact_revealed_at', fifteenMinsAgo);
+
+// Initiated but never marked done after 30 mins
+const { data: initiatedNotDone } = await supabase
+  .from('payments')
+  .select('id')
+  .eq('status', 'confirmed')
+  .not('call_initiated_at', 'is', null)
+  .lt('call_initiated_at', thirtyMinsAgo);
 
     let autoRefunded = 0;
     console.log(`[CheckExpired] Abandoned payments found: ${abandonedPayments?.length || 0}`);
@@ -1246,11 +1257,64 @@ const fourMinsAgo = new Date(Date.now() - 7 * 60 * 1000).toISOString();
       console.log(`[CheckExpired] Auto-refunded ${autoRefunded} abandoned payments`);
     }
 
+    // Auto-refund initiated-but-no-markdone payments
+let initiatedRefunded = 0;
+if (initiatedNotDone?.length) {
+  for (const p of initiatedNotDone) {
+    const { data: pay } = await supabase.from('payments').select('*').eq('id', p.id).single();
+    // Skip if already has a call confirmation or refund
+    const { data: existingConf } = await supabase.from('call_confirmations').select('id').eq('payment_id', p.id).single();
+    const { data: existingRefund } = await supabase.from('refund_requests').select('id').eq('payment_id', p.id).single();
+    if (existingConf || existingRefund) continue;
+    if (pay) {
+      const totalPaid = parseFloat(pay.total_charged || pay.amount);
+      const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
+      if (pay.paystack_ref) {
+        try {
+          await paystackRequest('POST', '/refund', {
+            transaction: pay.paystack_ref,
+            amount: Math.round(refundAmount * 100),
+          });
+        } catch (e) {
+          console.error('[InitiatedRefund] Paystack error:', e.message);
+        }
+      }
+      await supabase.from('payments').update({ status: 'refunded_partial' }).eq('id', pay.id);
+      await supabase.from('refund_requests').insert([{
+        payment_id: pay.id,
+        reason: 'Auto-refunded — host initiated contact but never marked call done within 30 minutes',
+        status: 'approved',
+        watcher_id: pay.watcher_id,
+        watcher_name: pay.watcher_name,
+        refund_amount: refundAmount,
+        refund_type: 'auto_30_min_no_markdone',
+        resolved_at: new Date().toISOString(),
+        auto_refunded: true,
+        refund_percentage: EARLY_REFUND_PCT,
+      }]);
+
+      // Notify both parties
+      try {
+        const { data: host } = await supabase.from('users').select('contact_number').eq('id', pay.target_user_id).single();
+        if (host?.contact_number && pay.watcher_contact) {
+          const { notifyHostBookingCancelled } = await import('../services/notification.service.js');
+          await notifyHostBookingCancelled(host.contact_number, pay.watcher_name);
+        }
+      } catch (e) {
+        console.error('[InitiatedRefund] Notify failed:', e.message);
+      }
+      initiatedRefunded++;
+    }
+  }
+  console.log(`[CheckExpired] Auto-refunded ${initiatedRefunded} initiated-but-no-markdone payments`);
+}
+
     return res.json({
       expiredConfirmations: expiredConfs?.length || 0,
       expiredFollowups: expiredFollowups?.length || 0,
       resolvedDisputes: staleDisputes?.length || 0,
       autoRefunded,
+      initiatedRefunded,
     });
   } catch (err) {
     console.error('[CheckExpired] Exception:', err);
