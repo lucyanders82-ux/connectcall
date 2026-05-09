@@ -334,15 +334,11 @@ export function WatcherDashboardView({
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL, fontWeight: 600 }}>{S}{p.total_charged || p.amount}</div>
-              <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: isDone ? c.green : p.status === "pending" ? "#facc15" : p.status === "confirmed" ? c.gold : p.status === "refunded" || p.status === "refunded_partial" || p.status === "cancelled" ? c.red : myRefund?.status === "denied" ? c.red : myDispute ? c.orange : c.sub }}>
-                {isDone ? "✅ Call complete"
-                  : myDispute ? "⚡ Disputed"
-                  : p.status === "pending" ? "🟡 Awaiting confirmation"
-                  : p.status === "confirmed" ? "🟢 Confirmed — contact revealed"
-                  : p.status === "refunded" ? "↩ Refunded"
-                  : p.status === "refunded_partial" ? "↩ Partially refunded"
-                  : p.status === "cancelled" ? "⊘ Cancelled"
-                  : p.status}
+              <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, padding: "2px 7px", borderRadius: 20, display: "inline-block",
+                background: isDone ? `${c.green}20` : myDispute ? `${c.orange}20` : p.status === "pending" ? `${"#facc15"}20` : p.status === "confirmed" ? `${c.gold}20` : p.status === "refunded" || p.status === "refunded_partial" || p.status === "cancelled" ? `${c.red}20` : `${c.sub}20`,
+                color: isDone ? c.green : myDispute ? c.orange : p.status === "pending" ? "#facc15" : p.status === "confirmed" ? c.gold : p.status === "refunded" || p.status === "refunded_partial" || p.status === "cancelled" ? c.red : c.sub,
+              }}>
+                {isDone ? "✅ Done" : myDispute ? "⚡ Disputed" : p.status === "pending" ? "⏳ Pending" : p.status === "confirmed" ? "🟢 Active" : p.status === "refunded" ? "↩ Refunded" : p.status === "refunded_partial" ? "↩ Partial" : p.status === "cancelled" ? "⊘ Cancelled" : p.status}
               </div>
             </div>
           </div>
@@ -355,8 +351,9 @@ export function WatcherDashboardView({
 
           {/* Pending info */}
           {p.status === "pending" && !isDone && !myDispute && (
-            <div style={{ padding: "10px 14px", borderRadius: 8, background: c.surface, border: `1px solid ${c.border}`, fontSize: 12, color: c.sub }}>
-              🔒 Waiting for payment to be confirmed. Contact will be revealed automatically.
+            <div style={{ padding: "8px 12px", borderRadius: 8, background: c.surface, fontSize: 12, color: c.sub, display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.orange, display: "inline-block", animation: "pulse 2s infinite" }} />
+              Awaiting confirmation — contact revealed automatically
             </div>
           )}
 
@@ -447,8 +444,8 @@ export function WatcherDashboardView({
                 return expired;
               })() && (
                 <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginTop: 8, width: "100%" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>⏱ Contact window closed</div>
-                                    <div style={{ fontSize: 12, color: c.sub, lineHeight: 1.6 }}>The 3-minute window has passed and the host did not initiate contact. The host has been notified and has 10 minutes to call before the booking is cancelled. If no action is taken, your refund will be processed automatically within 15 minutes.</div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 4 }}>⏱ Contact window closed</div>
+                  <div style={{ fontSize: 12, color: c.sub }}>Host notified — auto-refund in ~15 mins if no action.</div>
                 </div>
               )}
             </div>

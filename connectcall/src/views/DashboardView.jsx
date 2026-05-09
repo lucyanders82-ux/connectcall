@@ -363,19 +363,26 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                         const isCancelled = pay.status === "cancelled" || pay.status === "refunded_partial";
 
                         return (
+                          const borderCol = isDisputed ? c.orange : isCancelled ? c.red : pay.status === "confirmed" ? c.gold : c.border;
+                        return (
                           <div key={pay.id} style={{
-                            padding: 16, borderRadius: 12, marginBottom: 10,
+                            borderRadius: 12, marginBottom: 10, overflow: "hidden",
                             background: `linear-gradient(135deg,${c.card},#1a1a24)`,
-                            border: `1px solid ${isDisputed ? c.orange : isCancelled ? c.red : pay.status === "confirmed" ? c.gold : c.border}`,
+                            border: `1px solid ${borderCol}`,
                           }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                              <div style={{ fontWeight: 600 }}>
-                                {isDisputed ? "⚡ " : ""}{pay.status === "pending" ? "🔒 New Request" : pay.watcher_name || pay.watcherName}
+                            {/* Card header strip */}
+                            <div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${c.border}20` }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontSize: 16 }}>{isDisputed ? "⚡" : pay.status === "pending" ? "🔒" : pay.status === "confirmed" ? "🟢" : "📋"}</span>
+                                <span style={{ fontWeight: 700, fontSize: 14 }}>{pay.status === "pending" ? "New Request" : pay.watcher_name || pay.watcherName}</span>
+                                {pay.paystack_verified && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 20, background: `${c.green}20`, color: c.green, fontWeight: 700 }}>VERIFIED</span>}
                               </div>
-                              {pay.paystack_verified && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: `${c.green}20`, color: c.green }}>✓ Verified</span>}
-                              {refund && !dispute && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: `${c.orange}20`, color: c.orange }}>Refund {refund.status}</span>}
-                              {isCancelled && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: `${c.red}20`, color: c.red }}>Cancelled</span>}
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: c.goldL, fontWeight: 600 }}>{S}{pay.total_charged || pay.amount}</span>
+                                <span style={{ fontSize: 10, color: c.sub }}>{new Date(pay.created_at || pay.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                              </div>
                             </div>
+                            <div style={{ padding: "12px 16px" }}>
 
                             {/* ── DISPUTE BANNER ── */}
                             {dispute && <DisputeBanner dispute={dispute} payment={pay} />}
@@ -407,8 +414,9 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                             )}
 
                             {pay.status === "pending" && !isDisputed && (
-                              <div style={{ padding: "10px", borderRadius: 8, background: c.surface, border: `1px solid ${c.border}`, fontSize: 12, color: c.sub }}>
-                                🔒 Contacts hidden — waiting for admin confirmation
+                              <div style={{ padding: "8px 12px", borderRadius: 8, background: c.surface, fontSize: 12, color: c.sub, display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.orange, display: "inline-block", animation: "pulse 2s infinite" }} />
+                                Awaiting admin confirmation — contacts hidden
                               </div>
                             )}
                                                         {pay.status === "confirmed" && !isDisputed && !refund && (() => {
@@ -461,10 +469,11 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                               );
                             })()}
                             {conf && conf.status === "pending" && !isDisputed && (
-  <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: `${c.gold}10`, border: `1px solid ${c.gold}30`, fontSize: 12, color: c.goldL }}>
-    ⏳ Awaiting watcher confirmation — funds will be released to your MoMo after
-  </div>
-)}
+                              <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: `${c.gold}10`, border: `1px solid ${c.gold}30`, fontSize: 12, color: c.goldL, display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.gold, display: "inline-block", animation: "pulse 2s infinite" }} />
+                                Awaiting watcher confirmation — payout pending
+                              </div>
+                            )}
                                                         {pay.status === "confirmed" && !callDone && !conf && !isDisputed && !refund && (
   <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
     <div style={{ flex: 1 }}>
@@ -518,6 +527,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
   </div>
 )}
                           </div>
+                          </div>
                         );
                       })}
                     </div>
@@ -547,41 +557,22 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                             const callDone = calls.find(cl => cl.payment_id === pay.id);
                             const conf = (callConfirmations || []).find(cc => cc.payment_id === pay.id);
                             const dispute = disputes.find(d => d.payment_id === pay.id);
+                            const histStatus = pay.status === "completed" || conf?.status === "confirmed" || conf?.status === "auto_confirmed" || dispute?.status === "resolved_host"
+                              ? { label: "✅ Done", color: c.green }
+                              : pay.status === "refunded" ? { label: "↩ Refunded", color: c.red }
+                              : pay.status === "refunded_partial" || pay.status === "cancelled" ? { label: "↩ Partial refund", color: c.red }
+                              : dispute?.status === "resolved_watcher" ? { label: "❌ Dispute lost", color: c.red }
+                              : { label: "Done", color: c.sub };
                             return (
-                              <div key={pay.id} style={{ padding: 14, borderRadius: 10, marginBottom: 8, background: c.surface, border: `1px solid ${c.border}` }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                                  <div>
-                                    <div style={{ fontWeight: 600, fontSize: 13 }}>{pay.watcher_name}</div>
-                                    <div style={{ fontSize: 11, color: c.sub }}>{new Date(pay.created_at || pay.ts).toLocaleString()}</div>
-                                  </div>
-                                  <div style={{ textAlign: "right" }}>
-                                    <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: c.goldL }}>{S}{pay.total_charged || pay.amount}</div>
-                                    <div style={{ fontSize: 11, fontWeight: 600, color: pay.status === "completed" ? c.green : pay.status === "refunded" || pay.status === "refunded_partial" || pay.status === "cancelled" ? c.red : conf?.status === "confirmed" || conf?.status === "auto_confirmed" ? c.green : dispute?.status === "resolved_host" ? c.green : dispute?.status === "resolved_watcher" ? c.red : c.sub }}>
-                                      {pay.status === "completed" || conf?.status === "confirmed" || conf?.status === "auto_confirmed" || dispute?.status === "resolved_host"
-                                        ? "✅ Done"
-                                        : pay.status === "refunded"
-                                          ? "❌ Cancelled — refunded"
-                                          : pay.status === "refunded_partial" || pay.status === "cancelled"
-                                            ? "↩ Partial Refund"
-                                            : dispute?.status === "resolved_watcher"
-                                              ? "❌ Dispute lost — refunded"
-                                              : "Done"}
-                                    </div>
-                                  </div>
+                              <div key={pay.id} style={{ padding: "12px 14px", borderRadius: 10, marginBottom: 8, background: c.surface, border: `1px solid ${c.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                                <div>
+                                  <div style={{ fontWeight: 600, fontSize: 13 }}>{pay.watcher_name}</div>
+                                  <div style={{ fontSize: 10, color: c.sub, marginTop: 2 }}>{new Date(pay.created_at || pay.ts).toLocaleDateString()}{conf?.status === "auto_confirmed" ? " · 🤖 Auto-confirmed" : ""}{dispute?.resolved_by === "ai" ? ` · 🧠 AI verdict (${dispute.ai_confidence}%)` : dispute?.resolved_by === "admin" ? " · Admin decision" : ""}</div>
                                 </div>
-                                {callDone?.released && (
-  <div style={{ marginTop: 8, fontSize: 12, color: c.green }}>
-    💸 {pay.status === "completed" ? "Funds released to your MoMo" : 
-        pay.status === "refunded" || pay.status === "refunded_partial" ? "Funds refunded to watcher" : 
-        "Funds will be released to your MoMo after confirmation"}
-  </div>
-)}
-                                {conf?.status === "auto_confirmed" && <div style={{ marginTop: 6, fontSize: 11, color: c.dim }}>🤖 Auto-confirmed after timeout</div>}
-                                {dispute && (dispute.status === "resolved_host" || dispute.status === "resolved_watcher") && (
-                                  <div style={{ marginTop: 6, fontSize: 11, color: dispute.status === "resolved_host" ? c.green : c.red }}>
-                                    {dispute.status === "resolved_host" ? "✅ Dispute won" : "❌ Dispute lost"} — {dispute.resolved_by === "ai" ? `AI verdict (${dispute.ai_confidence}%)` : "Admin decision"}
-                                  </div>
-                                )}
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.goldL }}>{S}{pay.total_charged || pay.amount}</span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: histStatus.color }}>{histStatus.label}</span>
+                                </div>
                               </div>
                             );
                           })}

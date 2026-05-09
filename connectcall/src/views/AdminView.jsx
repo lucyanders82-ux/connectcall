@@ -210,7 +210,7 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
             )}
 
             {/* Admin actions */}
-            {(isOpen || isEscalated) && !localResolved.has(dispute.id) && (dispute.host_evidence_url || dispute.watcher_evidence_url) && (
+            {(isOpen || isEscalated) && !localResolved.has(dispute.id) && !isResolved && !isAI && (dispute.host_evidence_url || dispute.watcher_evidence_url) && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                 <Btn
                   small variant="blue"
