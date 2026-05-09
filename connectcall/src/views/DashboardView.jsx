@@ -557,6 +557,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                             const callDone = calls.find(cl => cl.payment_id === pay.id);
                             const conf = (callConfirmations || []).find(cc => cc.payment_id === pay.id);
                             const dispute = disputes.find(d => d.payment_id === pay.id);
+                            return (() => {
                             const histStatus = pay.status === "completed" || conf?.status === "confirmed" || conf?.status === "auto_confirmed" || dispute?.status === "resolved_host"
                               ? { label: "✅ Done", color: c.green }
                               : pay.status === "refunded" ? { label: "↩ Refunded", color: c.red }
@@ -575,7 +576,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                                 </div>
                               </div>
                             );
-                          })}
+                            })();})}
                         </div>
                       )}
                     </div>
