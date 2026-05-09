@@ -414,8 +414,6 @@ app.post('/api/admin/auto-confirm-pending', requireAdmin, async (req, res) => {
   }
 });
 
-app.use('/api/admin', requireAdmin, adminRoutes);
-
 app.post('/api/admin/resolve-dispute', requireAdmin, async (req, res) => {
   try {
     const { disputeId, verdict } = req.body;
@@ -466,6 +464,8 @@ app.post('/api/admin/resolve-dispute', requireAdmin, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+app.use('/api/admin', requireAdmin, adminRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  HOST ROUTES

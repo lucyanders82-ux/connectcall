@@ -201,7 +201,7 @@ export default function App() {
           supabase.from("call_confirmations").select("*").order("created_at", { ascending: false }),
           supabase.from("reports").select("*").order("created_at", { ascending: false }),
           supabase.from("disputes").select("*").order("opened_at", { ascending: false }),
-          supabase.from("followup_requests").select("*").order("created_at", { ascending: false }),
+          supabase.from("followup_requests").select("*").order("requested_at", { ascending: false }),
         ]);
         if (uRows) {
           const mapped = uRows.map(normaliseUser);
