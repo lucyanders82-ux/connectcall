@@ -683,10 +683,10 @@ const refundAmount = parseFloat((totalPaid * REFUND_HOST_REJECTED / 100).toFixed
 
     // Notify watcher
     try {
-      const { notifyHostBookingCancelled } = await import('./services/notification.service.js');
-      if (pay.watcher_contact) {
-        await notifyHostBookingCancelled(pay.watcher_contact, pay.watcher_name);
-      }
+      const { notifyWatcherHostRejected } = await import('./services/notification.service.js');
+if (pay.watcher_contact) {
+  await notifyWatcherHostRejected(pay.watcher_contact);
+}
     } catch (e) {
       console.error('[Reject] Notify failed:', e.message);
     }
@@ -1131,3 +1131,17 @@ cron.schedule('*/30 * * * *', async () => {
     console.error('[Cron] call check-expired failed:', e.message);
   }
 });
+
+export async function notifyWatcherHostRejected(watcherContact) {
+  try {
+    const to = formatGhanaNumber(watcherContact);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: The host was unable to take your call and has rejected the request. You will receive a 90% refund shortly. We apologise for the inconvenience.`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Watcher host rejected notified — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Watcher host rejected notification failed:', err.message);
+  }
+}

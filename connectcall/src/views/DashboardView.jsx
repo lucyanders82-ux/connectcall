@@ -32,6 +32,10 @@ export function DashboardView({
   const myCalls = calls.filter(cl => cl.target_user_id === user.id || cl.targetUserId === user.id);
   const myVP    = verifyPrompts.filter(v => !v.answered && myPay.some(p => p.id === v.payment_id || p.id === v.paymentId));
   const hostRefundReqs = refundReqs.filter(r => r.status === "pending_host" && myPay.some(p => p.id === r.payment_id));
+  const missedReqs = myPay.filter(p =>
+    (p.status === "refunded_partial" || p.status === "cancelled") &&
+    !followupReqs.find(f => f.payment_id === p.id && f.status === "accepted")
+  );
 
   const liveReqs = myPay.filter(p => {
     if (p.status === "disputed") {
@@ -223,8 +227,12 @@ export function DashboardView({
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, marginBottom: 24, background: c.surface, padding: 4, borderRadius: 10, width: "fit-content", flexWrap: "wrap" }}>
-          {["overview", "requests", "manage profile"].map(t => {
-            const badge = t === "requests" ? liveReqs.length : 0;
+          {["overview", "requests", "missed", "manage profile"].map(t => {
+            const missedReqs = myPay.filter(p =>
+  (p.status === "refunded_partial" || p.status === "cancelled") &&
+  !followupReqs.find(f => f.payment_id === p.id && f.status === "accepted")
+);
+const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.length : 0;
             return (
               <button key={t} onClick={() => setTab(t)} style={{ padding: "8px 18px", borderRadius: 8, border: "none", cursor: "pointer", background: tab === t ? c.card : "transparent", color: tab === t ? c.goldL : c.sub, fontSize: 12, fontWeight: 600, fontFamily: "'Plus Jakarta Sans',sans-serif", textTransform: "capitalize", position: "relative" }}>
                 {t}
@@ -414,7 +422,7 @@ export function DashboardView({
     <Btn
       small variant="red"
       onClick={async () => {
-        if (!window.confirm("Reject this request? The watcher will receive a 70% refund immediately.")) return;
+        if (!window.confirm("Reject this request? The watcher will receive a 90% refund immediately.")) return;
         const { apiRejectRequest } = await import('../api.js');
         const result = await apiRejectRequest(pay.id, live.id);
         if (result.error) toast(result.error, "error");
@@ -503,6 +511,113 @@ export function DashboardView({
         )}
 
         {/* ── Manage Profile ── */}
+
+        {/* ── Missed Requests ── */}
+        {tab === "missed" && (
+          <div className="fu">
+            <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, marginBottom: 6 }}>Missed Requests</div>
+            <div style={{ color: c.sub, fontSize: 13, marginBottom: 20 }}>Bookings you missed — request a follow-up to retry the call.</div>
+
+            {missedReqs.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "48px 24px", background: c.card, border: `1px solid ${c.border}`, borderRadius: 18 }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 18, color: c.goldL }}>No missed requests</div>
+                <div style={{ color: c.sub, fontSize: 13, marginTop: 8 }}>You haven't missed any bookings.</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {missedReqs.map(pay => {
+                  const followup = followupReqs.find(f => f.payment_id === pay.id);
+                  const refund = refundReqs.find(r => r.payment_id === pay.id);
+                  return (
+                    <div key={pay.id} style={{
+                      padding: 18, borderRadius: 14,
+                      background: `linear-gradient(135deg,${c.card},#1a1a24)`,
+                      border: `1px solid ${c.red}40`,
+                    }}>
+                      {/* Header */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 15 }}>{pay.watcher_name}</div>
+                          <div style={{ fontSize: 11, color: c.sub, marginTop: 2 }}>{new Date(pay.created_at || pay.ts).toLocaleString()}</div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL }}>{S}{pay.total_charged || pay.amount}</div>
+                          <div style={{ fontSize: 11, color: c.red, marginTop: 2 }}>↩ Refunded {refund?.refund_percentage || 95}%</div>
+                        </div>
+                      </div>
+
+                      {/* Status timeline */}
+                      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+                        {[
+                          { label: "Booked", done: true },
+                          { label: "Contact Revealed", done: true },
+                          { label: "Call Made", done: false },
+                          { label: "Resolved", done: false },
+                        ].map((step, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <div style={{
+                              width: 20, height: 20, borderRadius: "50%",
+                              background: step.done ? c.green : c.surface,
+                              border: `2px solid ${step.done ? c.green : c.border}`,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 10, color: step.done ? "#fff" : c.dim,
+                            }}>
+                              {step.done ? "✓" : "○"}
+                            </div>
+                            <span style={{ fontSize: 10, color: step.done ? c.green : c.dim }}>{step.label}</span>
+                            {i < 3 && <span style={{ color: c.border, fontSize: 10 }}>→</span>}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Follow-up status or button */}
+                      {!followup && (
+                        <div style={{ background: `${c.blue}10`, border: `1px solid ${c.blue}30`, borderRadius: 10, padding: "12px 14px" }}>
+                          <div style={{ fontSize: 13, color: c.blue, fontWeight: 600, marginBottom: 4 }}>🔄 Want to retry this call?</div>
+                          <div style={{ fontSize: 12, color: c.sub, marginBottom: 10 }}>Send a follow-up request — the watcher has 10 minutes to accept and their contact will be revealed again.</div>
+                          <Btn
+                            small variant="blue"
+                            disabled={requestingFollowup[pay.id]}
+                            onClick={async () => {
+                              setRequestingFollowup(prev => ({ ...prev, [pay.id]: true }));
+                              await onRequestFollowup(pay.id);
+                              setRequestingFollowup(prev => ({ ...prev, [pay.id]: false }));
+                            }}
+                          >
+                            {requestingFollowup[pay.id] ? "Sending…" : "🔄 Request Follow-up Call"}
+                          </Btn>
+                        </div>
+                      )}
+
+                      {followup?.status === "pending" && (
+                        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.blue}10`, fontSize: 12, color: c.blue }}>
+                          ⏳ Follow-up sent — waiting for watcher to respond (10 min window)…
+                        </div>
+                      )}
+                      {followup?.status === "accepted" && (
+                        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.green}10`, fontSize: 12, color: c.green }}>
+                          ✅ Follow-up accepted — go to Requests tab to make the call
+                        </div>
+                      )}
+                      {followup?.status === "declined" && (
+                        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.red}10`, fontSize: 12, color: c.red }}>
+                          ✕ Watcher declined — refund is final
+                        </div>
+                      )}
+                      {followup?.status === "expired" && (
+                        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.sub}15`, fontSize: 12, color: c.sub }}>
+                          ⏰ Follow-up expired — watcher didn't respond
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === "manage profile" && (
           <div className="fu">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>

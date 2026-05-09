@@ -14,32 +14,37 @@ export function HowItWorksView({ setView }) {
     {
       icon: "⏱",
       title: "The 3-Minute Contact Window",
-      desc: "Once a host's contact is revealed, they have 3 minutes to reach out to you. If the host doesn't contact you within this window, you can claim a refund.",
+      desc: "Once a host's contact is revealed, they have 3 minutes to reach out to you. If the host doesn't contact you within this window and never clicks the call link, you can claim a 95% refund.",
     },
     {
       icon: "↩",
       title: "If the Host Doesn't Call",
-      desc: "If the host never contacts you and never marks the call as done, you get an automatic 70% refund. The host is notified and can request a follow-up call if they missed the window.",
+      desc: "If the host never clicks the call link within 15 minutes, you get an automatic 95% refund. If the host clicks the link but never marks the call done within 30 minutes, you get an 80% refund automatically.",
+    },
+    {
+      icon: "✕",
+      title: "If the Host Rejects Your Request",
+      desc: "If the host is unable to take your call, they can reject the request directly from their dashboard. You will receive a 90% refund immediately and be notified by SMS.",
     },
     {
       icon: "⚡",
       title: "If the Host Claims They Called (Dispute)",
-      desc: "If the host marks the call as complete but you never received a call, a dispute is opened. Both sides upload screenshots of their call logs as evidence. Our system reviews the evidence and resolves the dispute — if the evidence is clear, it's automatic. If not, an admin reviews it.",
+      desc: "If the host marks the call complete but you never received a call, a dispute is opened. Both sides upload screenshots of their call logs. Our AI reviews the evidence and resolves automatically — if confidence is high. Otherwise an admin reviews within 24 hours. Dispute refund is 85%.",
     },
     {
       icon: "📱",
       title: "Evidence You'll Need",
-      desc: "Take a screenshot of your phone's call log (WhatsApp or Telegram). Hosts must show an outgoing call with duration. Watchers must show no incoming call from the host's number during the booked window. Edited or cropped screenshots will be rejected.",
+      desc: "Take a screenshot of your WhatsApp or Telegram call log. Hosts must show an outgoing call with duration of at least 2 minutes. Watchers must show no incoming call from the host's number. Edited or cropped screenshots will be rejected by our AI.",
     },
     {
       icon: "🔄",
       title: "Follow-Up Calls",
-      desc: "If a host misses the 3-minute window, they can request a follow-up. You'll be notified and have 10 minutes to accept — which reveals their contact again — or decline to finalize your refund.",
+      desc: "If a host misses the contact window, they can request a follow-up. You'll be notified by SMS and have 10 minutes to accept — which reveals their contact again — or decline to finalize your refund.",
     },
     {
       icon: "🛡",
       title: "Refund Policy",
-      desc: "Early cancellations (before contact is revealed) and no-contact claims receive a 70% refund. Disputes are resolved based on evidence. Our platform fee covers escrow protection, admin review, and secure payments.",
+      desc: "Host ghosted (no link click) → 95% refund. Host clicked but no call → 80% refund. Host rejected → 90% refund. Dispute ruled your way → 85% refund. Our platform fee covers escrow protection, AI review, and secure payments.",
     },
   ];
 
