@@ -4,13 +4,31 @@ import { normaliseUser } from "../utils";
 import { Btn, Avatar, OnlineDot } from "../components/UI";
 import { supabase } from "../supabase";
 
+// ── Utility: build a WhatsApp/Telegram link from any number format ──────────
+// Handles: 0XXXXXXXXX (Ghana/Nigeria local), 233XXXXXXXXX, 234XXXXXXXXX, +233..., +234...
+function buildContactLink(rawNumber, platform) {
+  const digits = rawNumber.replace(/\D/g, "");
+  let intl = digits;
+
+  if (digits.startsWith("0") && digits.length === 10) {
+    // Local Ghana format → Ghana intl
+    intl = "233" + digits.slice(1);
+  } else if (digits.startsWith("0") && digits.length === 11) {
+    // Local Nigeria format (011 digits) → Nigeria intl
+    intl = "234" + digits.slice(1);
+  }
+  // Already has country code (233..., 234..., etc.) — use as-is
+
+  return platform === "Telegram" ? `https://t.me/+${intl}` : `https://wa.me/${intl}`;
+}
+
 export function WatcherDashboardView({
   user, users, payments, refundReqs, onRefundRequest, toast, setView,
   callConfirmations, onConfirmCall, favorites, toggleFavorite,
-  disputes = [],           // NEW
-  followupReqs = [],       // NEW
-  onSubmitEvidence,        // NEW
-  onAcceptFollowup,        // NEW
+  disputes = [],
+  followupReqs = [],
+  onSubmitEvidence,
+  onAcceptFollowup,
 }) {
   const myPayments = payments.filter(p =>
     (p.watcher_id === user?.id || p.watcher_name?.toLowerCase() === user?.name?.toLowerCase())
@@ -53,7 +71,6 @@ export function WatcherDashboardView({
     }
   }, [user?.id]);
 
-  // Notify watcher of resolved refunds (once)
   const resolvedRefunds = refundReqs.filter(r =>
     myPaymentIds.has(r.payment_id) &&
     (r.status === "approved" || r.status === "denied") &&
@@ -67,36 +84,27 @@ export function WatcherDashboardView({
     });
   }, [refundReqs]);
 
-  // ── DisputeBanner — shown when a dispute is active ──────────────────────────
+  // ── DisputeBanner ──────────────────────────────────────────────────────────
   const DisputeBanner = ({ dispute, paymentId }) => {
     const statusLabels = {
-  open:              { icon: "⚠️", text: "Dispute opened — waiting for host evidence", color: c.orange },
-  watcher_evidence:  { icon: "📤", text: "Host submitted evidence — your turn to respond", color: c.gold },
-  ai_verdict_pending:{ icon: "🧠", text: "AI is analysing both screenshots…", color: c.blue },
-  resolved_host:     { icon: "🏆", text: "Resolved in host's favor — payment released", color: c.green },
-  resolved_watcher:  { icon: "💸", text: "Resolved in your favor — refund processed", color: c.green },
-  escalated_admin:   { icon: "🔍", text: "Escalated to admin — decision within 24hrs", color: c.orange },
-};
+      open:              { icon: "⚠️", text: "Dispute opened — waiting for host evidence", color: c.orange },
+      watcher_evidence:  { icon: "📤", text: "Host submitted evidence — your turn to respond", color: c.gold },
+      ai_verdict_pending:{ icon: "🧠", text: "AI is analysing both screenshots…", color: c.blue },
+      resolved_host:     { icon: "🏆", text: "Resolved in host's favor — payment released", color: c.green },
+      resolved_watcher:  { icon: "💸", text: "Resolved in your favor — refund processed", color: c.green },
+      escalated_admin:   { icon: "🔍", text: "Escalated to admin — decision within 24hrs", color: c.orange },
+    };
     const s = statusLabels[dispute?.status] || statusLabels.open;
-
     return (
-      <div style={{
-        padding: "14px 16px", borderRadius: 12, marginBottom: 12,
-        background: `${s.color}15`, border: `2px solid ${s.color}40`,
-      }}>
+      <div style={{ padding: "14px 16px", borderRadius: 12, marginBottom: 12, background: `${s.color}15`, border: `2px solid ${s.color}40` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <span style={{ fontSize: 20 }}>{s.icon}</span>
           <span style={{ fontWeight: 600, fontSize: 14, color: s.color }}>{s.text}</span>
         </div>
         {dispute?.ai_analysis && (
-          <div style={{ fontSize: 12, color: c.sub, marginBottom: 8, lineHeight: 1.5 }}>
-            {dispute.ai_analysis}
-          </div>
+          <div style={{ fontSize: 12, color: c.sub, marginBottom: 8, lineHeight: 1.5 }}>{dispute.ai_analysis}</div>
         )}
-        {/* Show upload button if watcher needs to submit evidence */}
-        {dispute?.status === "watcher_evidence" &&
-         !dispute?.watcher_evidence_url &&
-         !dispute?.status?.startsWith("resolved") && (
+        {dispute?.status === "watcher_evidence" && !dispute?.watcher_evidence_url && !dispute?.status?.startsWith("resolved") && (
           <div>
             {dispute?.watcher_evidence_deadline && (() => {
               const minsLeft = Math.max(0, Math.round((new Date(dispute.watcher_evidence_deadline) - Date.now()) / 60000));
@@ -106,17 +114,10 @@ export function WatcherDashboardView({
                 </div>
               );
             })()}
-            <div style={{ fontSize: 12, color: c.sub, marginBottom: 8 }}>
-              Upload a screenshot of your call log showing no incoming call from the host during the booking window.
-            </div>
-            <EvidenceUploadButton
-              disputeId={dispute.id}
-              role="watcher"
-              onSubmitEvidence={onSubmitEvidence}
-            />
+            <div style={{ fontSize: 12, color: c.sub, marginBottom: 8 }}>Upload a screenshot of your call log showing no incoming call from the host during the booking window.</div>
+            <EvidenceUploadButton disputeId={dispute.id} role="watcher" onSubmitEvidence={onSubmitEvidence} />
           </div>
         )}
-        {/* Show verdict info if resolved */}
         {(dispute?.status === "resolved_host" || dispute?.status === "resolved_watcher") && (
           <div style={{ fontSize: 12, color: c.sub }}>
             Resolved {dispute.resolved_by === "ai" ? "automatically by AI" : "by admin"} —{" "}
@@ -127,70 +128,40 @@ export function WatcherDashboardView({
     );
   };
 
-    // ── EvidenceUploadButton (real file picker + Supabase Storage) ────────────
+  // ── EvidenceUploadButton ───────────────────────────────────────────────────
   const EvidenceUploadButton = ({ disputeId, role, onSubmitEvidence }) => {
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const fileInputRef = useRef(null);
-
     const handleFilePick = async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
-      if (!file.type.startsWith('image/')) {
-        toast('Please upload an image file', 'error');
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        toast('File too large — max 10MB', 'error');
-        return;
-      }
-
-      setUploading(true);
-      setUploadProgress(0);
-
-      // Simulate progress while upload runs
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => prev < 85 ? prev + 12 : prev);
-      }, 200);
-
+      if (!file.type.startsWith('image/')) { toast('Please upload an image file', 'error'); return; }
+      if (file.size > 10 * 1024 * 1024) { toast('File too large — max 10MB', 'error'); return; }
+      setUploading(true); setUploadProgress(0);
+      const progressInterval = setInterval(() => { setUploadProgress(prev => prev < 85 ? prev + 12 : prev); }, 200);
       try {
         const { apiUploadEvidence } = await import('../api.js');
         const url = await apiUploadEvidence(file, user?.id);
-        clearInterval(progressInterval);
-        setUploadProgress(100);
+        clearInterval(progressInterval); setUploadProgress(100);
         await onSubmitEvidence(disputeId, user?.id, role, url);
         toast('Evidence submitted successfully', 'success');
       } catch (e) {
-        clearInterval(progressInterval);
-        setUploadProgress(0);
+        clearInterval(progressInterval); setUploadProgress(0);
         toast('Failed to upload: ' + (e.message || 'Unknown error'), 'error');
       }
       setUploading(false);
     };
-
     return (
       <>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={handleFilePick}
-        />
-        <Btn
-          small
-          variant="blue"
-          disabled={uploading}
-          onClick={() => fileInputRef.current?.click()}
-        >
+        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFilePick} />
+        <Btn small variant="blue" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
           {uploading ? `Uploading…` : `📎 Upload ${role === 'host' ? 'Call Log' : 'Counter-Evidence'}`}
         </Btn>
         {uploading && (
           <div style={{ marginTop: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: c.sub, marginBottom: 4 }}>
-              <span>Uploading screenshot…</span>
-              <span>{uploadProgress}%</span>
+              <span>Uploading screenshot…</span><span>{uploadProgress}%</span>
             </div>
             <div style={{ height: 4, borderRadius: 4, background: c.surface, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${uploadProgress}%`, background: `linear-gradient(90deg, ${c.blue}, #60a5fa)`, borderRadius: 4, transition: 'width 0.2s ease' }} />
@@ -201,40 +172,23 @@ export function WatcherDashboardView({
     );
   };
 
-  // ── FollowupBanner ──────────────────────────────────────────────────────────
+  // ── FollowupBanner ─────────────────────────────────────────────────────────
   const FollowupBanner = ({ followup, paymentId }) => {
     const [responding, setResponding] = useState(false);
+    if (followup?.status === "expired") return (
+      <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.sub}15`, fontSize: 12, color: c.sub, marginBottom: 8 }}>⏰ Follow-up request expired</div>
+    );
+    if (followup?.status === "declined") return (
+      <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.red}10`, fontSize: 12, color: c.red, marginBottom: 8 }}>✕ You declined the follow-up — refund is final</div>
+    );
+    if (followup?.status === "accepted") return (
+      <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.green}10`, fontSize: 12, color: c.green, marginBottom: 8 }}>✅ Follow-up accepted — contact re-revealed</div>
+    );
 
-    if (followup?.status === "expired") {
-      return (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.sub}15`, fontSize: 12, color: c.sub, marginBottom: 8 }}>
-          ⏰ Follow-up request expired
-        </div>
-      );
-    }
-
-    if (followup?.status === "declined") {
-      return (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.red}10`, fontSize: 12, color: c.red, marginBottom: 8 }}>
-          ✕ You declined the follow-up — refund is final
-        </div>
-      );
-    }
-
-    if (followup?.status === "accepted") {
-      return (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.green}10`, fontSize: 12, color: c.green, marginBottom: 8 }}>
-          ✅ Follow-up accepted — contact re-revealed
-        </div>
-      );
-    }
-
-    // pending
     const [isExpired, setIsExpired] = useState(() => {
       const expiresAt = followup?.expires_at ? new Date(followup.expires_at) : null;
       return expiresAt ? new Date() > expiresAt : false;
     });
-
     useEffect(() => {
       const expiresAt = followup?.expires_at ? new Date(followup.expires_at) : null;
       if (!expiresAt) return;
@@ -243,38 +197,21 @@ export function WatcherDashboardView({
       const timer = setTimeout(() => setIsExpired(true), ms);
       return () => clearTimeout(timer);
     }, [followup?.expires_at]);
-
     if (isExpired) return null;
 
     return (
       <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginBottom: 8 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>
-          🔄 Host wants to retry the call
-        </div>
-        <div style={{ fontSize: 12, color: c.sub, marginBottom: 10 }}>
-          The host missed the original window and is requesting a follow-up. Accept to reveal their contact again.
-        </div>
+        <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>🔄 Host wants to retry the call</div>
+        <div style={{ fontSize: 12, color: c.sub, marginBottom: 10 }}>The host missed the original window and is requesting a follow-up. Accept to reveal their contact again.</div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Btn small variant="green" disabled={responding} onClick={async () => {
-            setResponding(true);
-            await onAcceptFollowup(followup.id, user?.id, true);
-            setResponding(false);
-          }}>
-            Accept
-          </Btn>
-          <Btn small variant="red" disabled={responding} onClick={async () => {
-            setResponding(true);
-            await onAcceptFollowup(followup.id, user?.id, false);
-            setResponding(false);
-          }}>
-            Decline
-          </Btn>
+          <Btn small variant="green" disabled={responding} onClick={async () => { setResponding(true); await onAcceptFollowup(followup.id, user?.id, true); setResponding(false); }}>Accept</Btn>
+          <Btn small variant="red"   disabled={responding} onClick={async () => { setResponding(true); await onAcceptFollowup(followup.id, user?.id, false); setResponding(false); }}>Decline</Btn>
         </div>
       </div>
     );
   };
 
-  // ── PaymentCard ─────────────────────────────────────────────────────────────
+  // ── PaymentCard ────────────────────────────────────────────────────────────
   const PaymentCard = ({ p, isLive }) => {
     const host      = users.find(u => u.id === (p.target_user_id || p.targetUserId));
     const myRefund  = refundReqs.find(r => r.payment_id === p.id);
@@ -286,17 +223,13 @@ export function WatcherDashboardView({
     const [refunding,  setRefunding]  = useState(false);
     const [secondsLeft, setSecondsLeft] = useState(null);
 
-        useEffect(() => {
-      if (p.status !== "confirmed" || !p.contact_revealed_at || myRefund || myConf || isDone || myDispute || p.call_initiated_at) { 
-        setSecondsLeft(null); 
-        return; 
+    useEffect(() => {
+      if (p.status !== "confirmed" || !p.contact_revealed_at || myRefund || myConf || isDone || myDispute || p.call_initiated_at) {
+        setSecondsLeft(null); return;
       }
       const revealedAt = new Date(p.contact_revealed_at).getTime();
       const WINDOW_MS  = 3 * 60 * 1000;
-      const tick = () => {
-        const remaining = Math.max(0, Math.round((revealedAt + WINDOW_MS - Date.now()) / 1000));
-        setSecondsLeft(remaining);
-      };
+      const tick = () => { const remaining = Math.max(0, Math.round((revealedAt + WINDOW_MS - Date.now()) / 1000)); setSecondsLeft(remaining); };
       tick();
       const interval = setInterval(tick, 1000);
       return () => clearInterval(interval);
@@ -305,10 +238,8 @@ export function WatcherDashboardView({
     const formatCountdown = s => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
     const canCancel      = p.status === "pending" && !myConf && !myRefund && !myDispute;
-        const canEarlyRefund = p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at;
-        const canDispute     = false; // Dispute is now handled by the confirm/dispute poll at the top, not per-card
+    const canEarlyRefund = p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at;
 
-    // Determine card border color
     const borderColor = isDone ? c.green
       : p.status === "refunded" || p.status === "refunded_partial" || p.status === "cancelled" ? c.red
       : myRefund?.status === "denied" ? c.red
@@ -317,11 +248,7 @@ export function WatcherDashboardView({
       : c.border;
 
     return (
-      <div style={{
-        borderRadius: 14, background: `linear-gradient(135deg,${c.card},#1a1a24)`,
-        border: `1px solid ${borderColor}`,
-        overflow: "hidden", marginBottom: isLive ? 0 : 10,
-      }}>
+      <div style={{ borderRadius: 14, background: `linear-gradient(135deg,${c.card},#1a1a24)`, border: `1px solid ${borderColor}`, overflow: "hidden", marginBottom: isLive ? 0 : 10 }}>
         <div style={{ padding: "16px 18px" }}>
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
@@ -343,13 +270,9 @@ export function WatcherDashboardView({
             </div>
           </div>
 
-          {/* ── DISPUTE BANNER (NEW) ── */}
           {myDispute && <DisputeBanner dispute={myDispute} paymentId={p.id} />}
-
-          {/* ── FOLLOW-UP BANNER (NEW) ── */}
           {myFollowup && <FollowupBanner followup={myFollowup} paymentId={p.id} />}
 
-          {/* Pending info */}
           {p.status === "pending" && !isDone && !myDispute && (
             <div style={{ padding: "8px 12px", borderRadius: 8, background: c.surface, fontSize: 12, color: c.sub, display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.orange, display: "inline-block", animation: "pulse 2s infinite" }} />
@@ -357,13 +280,12 @@ export function WatcherDashboardView({
             </div>
           )}
 
-          {/* Host contact revealed */}
+          {/* Host contact revealed — FIXED: Nigerian number support */}
           {(p.status === "confirmed" || isDone) && p.host_contact_revealed && !myDispute && (() => {
             const number   = p.host_contact_revealed || "";
             const platform = p.host_platform_revealed || "WhatsApp";
-            const digits   = number.replace(/\D/g, "");
-            const intl     = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
-            const link     = platform === "Telegram" ? `https://t.me/+${intl}` : `https://wa.me/${intl}`;
+            // FIXED: use shared buildContactLink for Ghana + Nigeria numbers
+            const link = buildContactLink(number, platform);
             return (
               <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.green}10`, border: `1px solid ${c.green}30`, marginBottom: 10 }}>
                 <div style={{ fontSize: 11, color: c.green, marginBottom: 3 }}>✓ Host Contact</div>
@@ -383,7 +305,6 @@ export function WatcherDashboardView({
             );
           })()}
 
-          {/* Done state */}
           {isDone && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.green}10`, marginBottom: 8 }}>
@@ -406,7 +327,6 @@ export function WatcherDashboardView({
             </div>
           )}
 
-          {/* Refund status */}
           {myRefund && !myDispute && (
             <div style={{ padding: "8px 12px", borderRadius: 8, marginBottom: 10, background: myRefund.status === "approved" ? `${c.green}10` : myRefund.status === "denied" ? `${c.red}10` : `${c.orange}10` }}>
               {myRefund.status === "pending" || myRefund.status === "pending_host"
@@ -417,15 +337,13 @@ export function WatcherDashboardView({
             </div>
           )}
 
-          {/* Live-only actions */}
           {isLive && !myDispute && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {canCancel && (
                 <Btn small variant="orange" disabled={refunding} onClick={async () => { setRefunding(true); await onRefundRequest(p.id, "Cancelling request before contact revealed"); setRefunding(false); }}>
-                 {refunding ? "Cancelling…" : "✕ Cancel (get 95% back)"}
+                  {refunding ? "Cancelling…" : "✕ Cancel (get 95% back)"}
                 </Btn>
               )}
-
               {canEarlyRefund && (
                 <div style={{ marginBottom: 8, width: "100%" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -437,8 +355,7 @@ export function WatcherDashboardView({
                   </Btn>
                 </div>
               )}
-
-                                                                      {p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at && (() => {
+              {p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at && (() => {
                 const revealedAt = p.contact_revealed_at ? new Date(p.contact_revealed_at).getTime() : null;
                 const expired = revealedAt && (Date.now() - revealedAt > 3 * 60 * 1000);
                 return expired;
@@ -460,7 +377,6 @@ export function WatcherDashboardView({
       <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 32, marginBottom: 4 }}>My Dashboard</div>
       <div style={{ color: c.sub, fontSize: 13, marginBottom: 24 }}>Welcome back, {user?.name?.split(" ")[0]} ✦</div>
 
-      {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12, marginBottom: 28 }}>
         {[
           ["Calls Booked", myPayments.length, c.blue],
@@ -473,7 +389,6 @@ export function WatcherDashboardView({
         ))}
       </div>
 
-      {/* Pending confirmation prompt */}
       {pendingConfirmation && (
         <div style={{ background: `linear-gradient(135deg,${c.gold}20,${c.goldD})`, border: `2px solid ${c.gold}`, borderRadius: 16, padding: 22, marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
@@ -490,7 +405,6 @@ export function WatcherDashboardView({
         </div>
       )}
 
-      {/* Saved favourites */}
       {savedFavorites.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 18, marginBottom: 12, color: c.goldL }}>❤️ Saved Consultants</div>
@@ -516,7 +430,6 @@ export function WatcherDashboardView({
         </div>
       )}
 
-      {/* Empty state */}
       {myPayments.length === 0 ? (
         <div style={{ textAlign: "center", padding: "48px 24px", background: `linear-gradient(135deg,${c.card},#1a1a24)`, border: `1px solid ${c.border}`, borderRadius: 18 }}>
           <div style={{ fontSize: 52, marginBottom: 16 }}>🔮</div>
