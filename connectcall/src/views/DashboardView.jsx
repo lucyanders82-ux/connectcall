@@ -380,11 +380,24 @@ export function DashboardView({
                                       </div>
                                     </div>
                                   </a>
-                                  {hasInitiated && (
-                                    <div style={{ fontSize: 11, color: c.green, marginTop: 6 }}>
-                                      ✓ Call initiated at {new Date(pay.call_initiated_at).toLocaleTimeString()}
-                                    </div>
-                                  )}
+                                  {hasInitiated && (() => {
+                                    const initiatedAt = new Date(pay.call_initiated_at).getTime();
+                                    const deadlineMs = initiatedAt + 30 * 60 * 1000;
+                                    const minsLeft = Math.max(0, Math.round((deadlineMs - Date.now()) / 60000));
+                                    const isUrgent = minsLeft <= 10;
+                                    return (
+                                      <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: isUrgent ? `${c.red}15` : `${c.green}10`, border: `1px solid ${isUrgent ? c.red : c.green}30` }}>
+                                        <div style={{ fontSize: 12, color: isUrgent ? c.red : c.green, fontWeight: 600 }}>
+                                          {isUrgent ? "⚠️" : "✓"} Call initiated at {new Date(pay.call_initiated_at).toLocaleTimeString()}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: c.sub, marginTop: 3 }}>
+                                          {minsLeft > 0
+                                            ? `Mark Done within ${minsLeft} min${minsLeft !== 1 ? "s" : ""} or booking will be auto-cancelled`
+                                            : "⚠️ Deadline passed — booking may be cancelled soon"}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               );
                             })()}

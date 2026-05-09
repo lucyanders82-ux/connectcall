@@ -611,6 +611,17 @@ app.post('/api/call/initiate', async (req, res) => {
       console.error('[Initiate] Notify failed:', e.message);
     }
 
+    // Notify host of 30-min deadline
+    try {
+      const { notifyHostCallInitiated } = await import('./services/notification.service.js');
+      const { data: host } = await supabase.from('users').select('contact_number').eq('id', hostId).single();
+      if (host?.contact_number) {
+        await notifyHostCallInitiated(host.contact_number, pay.watcher_name);
+      }
+    } catch (e) {
+      console.error('[Initiate] Deadline notify failed:', e.message);
+    }
+
     console.log(`[Initiate] Host ${hostId} clicked contact link for payment ${paymentId}`);
     return res.json({ success: true, call_initiated_at: pay.call_initiated_at || new Date().toISOString() });
 

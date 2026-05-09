@@ -193,3 +193,17 @@ export async function notifyBothEscalated(hostContact, watcherContact) {
     console.error('[SMS] Escalation notification failed:', err.message);
   }
 }
+
+export async function notifyHostCallInitiated(hostContact, watcherName) {
+  try {
+    const to = formatGhanaNumber(hostContact);
+    await sms.send({
+      to: [to],
+      message: `ConnectCall: You have initiated contact with ${watcherName}. You have 30 minutes to complete the call and click "Mark Done" — or the booking will be auto-cancelled and refunded.`,
+      from: process.env.AT_SENDER_ID || undefined,
+    });
+    console.log(`[SMS] Host call initiated deadline — ${to}`);
+  } catch (err) {
+    console.error('[SMS] Host call initiated notification failed:', err.message);
+  }
+}
