@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Nav, Toast, MobileNav, FeedbackButton } from "./components/UI";
 import { supabase } from "./supabase";
+import { Toast, Petals, Nav, MobileNav, SkeletonCard, FeedbackButton } from "./components/UI";
 
 // ── constants / utils / api ───────────────────────────────────────────────────
 import { API_BASE, ADMIN_TOKEN, GLOBAL_CSS } from "./constants";
@@ -11,9 +11,6 @@ import {
   apiDenyRefund, apiWatcherRefund, apiHostApproveRefund, apiAdminApproveRefund,
   apiSubmitEvidence, apiRequestFollowup, apiAcceptFollowup, apiGetDispute, apiInitiateCall,
 } from "./api";
-
-// ── shared UI ─────────────────────────────────────────────────────────────────
-import { Toast, Petals, Nav, MobileNav, SkeletonCard } from "./components/UI";
 
 // ── views ─────────────────────────────────────────────────────────────────────
 import { HomeView }             from "./views/HomeView";
