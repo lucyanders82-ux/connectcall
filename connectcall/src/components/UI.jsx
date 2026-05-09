@@ -362,11 +362,11 @@ export function MobileNav({ setView, currentUser, isAdmin, handleLogout }) {
 
 
 export function FeedbackButton() {
-  const [open, setOpen] = _useState(false);
-  const [step, setStep] = _useState(1); // 1 = rating, 2 = text, 3 = done
-  const [rating, setRating] = _useState(null);
-  const [text, setText] = _useState("");
-  const [sending, setSending] = _useState(false);
+  const [open, setOpen] = useState(false);
+const [step, setStep] = useState(1);
+const [rating, setRating] = useState(null);
+const [text, setText] = useState("");
+const [sending, setSending] = useState(false);
 
   const reset = () => { setStep(1); setRating(null); setText(""); setSending(false); };
 
