@@ -362,8 +362,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                         const isDisputed = pay.status === "disputed" || !!dispute;
                         const isCancelled = pay.status === "cancelled" || pay.status === "refunded_partial";
 
-                        return (
-                          const borderCol = isDisputed ? c.orange : isCancelled ? c.red : pay.status === "confirmed" ? c.gold : c.border;
+                        const borderCol = isDisputed ? c.orange : isCancelled ? c.red : pay.status === "confirmed" ? c.gold : c.border;
                         return (
                           <div key={pay.id} style={{
                             borderRadius: 12, marginBottom: 10, overflow: "hidden",
