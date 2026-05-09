@@ -1,5 +1,26 @@
+import { useState } from "react";
 import { c } from "../constants";
 import { Btn } from "../components/UI";
+
+function RuleCard({ rule: r }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: `linear-gradient(135deg,${c.card},#1a1a24)`, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden" }}>
+      <div style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={() => setOpen(o => !o)}>
+        <span style={{ fontSize: 22, flexShrink: 0 }}>{r.icon}</span>
+        <span style={{ fontWeight: 600, fontSize: 14, color: c.text, flex: 1 }}>{r.title}</span>
+        <span style={{ fontSize: 11, color: c.sub, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: c.surface, border: `1px solid ${c.border}` }}>
+          {open ? "▲ less" : "learn more ▼"}
+        </span>
+      </div>
+      {open && (
+        <div style={{ padding: "0 18px 16px", fontSize: 13, color: c.sub, lineHeight: 1.8, borderTop: `1px solid ${c.border}20` }}>
+          {r.desc}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function HowItWorksView({ setView }) {
   const steps = [
@@ -80,23 +101,13 @@ export function HowItWorksView({ setView }) {
         <div className="fu" style={{ marginTop: 48, textAlign: "center" }}>
           <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 32, fontWeight: 600, color: c.goldL, marginBottom: 8 }}>Disputes & Refunds</div>
           <div style={{ color: c.sub, fontSize: 14, maxWidth: 520, margin: "0 auto 32px", lineHeight: 1.7 }}>
-            Here's exactly what happens if something goes wrong — so both sides know what to expect.
+            Here's exactly what happens if something goes wrong.
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {rules.map((r, i) => (
-            <div key={i} className="fu" style={{
-              animationDelay: `${i * 0.08}s`,
-              background: `linear-gradient(135deg,${c.card},#1a1a24)`,
-              border: `1px solid ${c.border}`,
-              borderRadius: 16,
-              padding: 24,
-            }}>
-              <div style={{ fontSize: 28, marginBottom: 10 }}>{r.icon}</div>
-              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 16, fontWeight: 600, color: c.goldL, marginBottom: 8 }}>{r.title}</div>
-              <div style={{ color: c.sub, fontSize: 12, lineHeight: 1.8 }}>{r.desc}</div>
-            </div>
+            <RuleCard key={i} rule={r} />
           ))}
         </div>
 

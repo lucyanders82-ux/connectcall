@@ -115,7 +115,8 @@ export function Toast({ toasts }) {
         <div key={t.id} style={{
           background: t.type === "error" ? c.red : t.type === "info" ? c.blue : t.type === "warning" ? c.orange : c.green,
           color: "#0a0a0f", padding: "11px 18px", borderRadius: 10, fontWeight: 600, fontSize: 13,
-          animation: "slideIn .3s ease", boxShadow: "0 4px 20px #00000066", maxWidth: 300,
+          animation: "slideIn .3s ease, fadeOut .4s ease 3.8s forwards",
+          boxShadow: "0 4px 20px #00000066", maxWidth: 320,
         }}>{t.msg}</div>
       ))}
     </div>

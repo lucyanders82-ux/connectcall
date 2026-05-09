@@ -156,7 +156,7 @@ export default function App() {
   const toast = useCallback((msg, type = "success") => {
     const id = Date.now();
     setToasts(t => [...t, { id, msg, type }]);
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4200);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 5000);
   }, []);
 
   // ── logout ─────────────────────────────────────────────────────────────────

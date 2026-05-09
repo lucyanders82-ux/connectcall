@@ -294,38 +294,52 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 30, color: c.goldL, fontWeight: 600 }}>{S}{live.rate}</div>
                 <div style={{ color: c.sub, fontSize: 11 }}>per call via {live.platform}</div>
-                <div style={{ marginTop: 8, color: c.green, fontWeight: 700, fontSize: 15 }}>Wallet: {S}{Number(live.wallet || 0).toFixed(2)}</div>
               </div>
             </div>
 
-            <div style={{ background: c.card, border: `1px solid ${live.paystackRecipientCode ? c.green : c.orange}`, borderRadius: 14, padding: 20, marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <span style={{ fontSize: 20 }}>{live.paystackRecipientCode ? "✅" : "⚠️"}</span>
-                <div style={{ fontWeight: 600 }}>{live.paystackRecipientCode ? "Automatic Payouts Active" : "Payout Setup Incomplete"}</div>
-              </div>
+            <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                background: live.paystackRecipientCode ? `${c.green}20` : `${c.orange}20`,
+                color: live.paystackRecipientCode ? c.green : c.orange,
+                border: `1px solid ${live.paystackRecipientCode ? c.green : c.orange}40`,
+              }}>
+                {live.paystackRecipientCode ? "✅ Payout Active" : "⚠️ Payout Incomplete"}
+              </span>
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                background: `${c.green}20`, color: c.green, border: `1px solid ${c.green}40`,
+              }}>
+                💰 Wallet: {S}{Number(live.wallet || 0).toFixed(2)}
+              </span>
             </div>
 
-            <div style={{ background: `${c.blue}10`, border: `1px solid ${c.blue}30`, borderRadius: 14, padding: 20, marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                <span style={{ fontSize: 22, marginTop: 2 }}>💡</span>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: c.blue, marginBottom: 6 }}>How to get paid — important!</div>
-                  <div style={{ fontSize: 13, color: c.sub, lineHeight: 1.7 }}>
-                    When a booking is confirmed, go to <strong style={{ color: c.text }}>Requests</strong> and{" "}
-                    <strong style={{ color: c.text }}>tap the contact link</strong> to call the watcher.
-                    You <strong style={{ color: c.text }}>must click the link</strong> — this records that you initiated the call.
-                    Then mark the call as done to trigger your payout. Skipping this step causes an auto-refund to the watcher.
+            {(() => {
+              const [tipOpen, setTipOpen] = useState(false);
+              return (
+                <div style={{ background: `${c.blue}10`, border: `1px solid ${c.blue}30`, borderRadius: 14, marginBottom: 16, overflow: "hidden" }}>
+                  <div onClick={() => setTipOpen(o => !o)} style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <span style={{ fontSize: 18 }}>💡</span>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: c.blue, flex: 1 }}>How to get paid</span>
+                    <span style={{ fontSize: 12, color: c.blue }}>{tipOpen ? "▲" : "▼"}</span>
                   </div>
+                  {tipOpen && (
+                    <div style={{ padding: "0 16px 14px", fontSize: 13, color: c.sub, lineHeight: 1.7 }}>
+                      Go to <strong style={{ color: c.text }}>Requests</strong> and <strong style={{ color: c.text }}>tap the contact link</strong> to call the watcher. You <strong style={{ color: c.text }}>must click the link</strong> — this records that you initiated the call. Then mark done to trigger your payout. Skipping causes an auto-refund.
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
+              );
+            })()}
 
-            <div style={{ background: `linear-gradient(135deg,${c.gold}10,${c.goldD})`, border: `1px solid ${c.gold}40`, borderRadius: 14, padding: 20, marginBottom: 16, textAlign: "center" }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>🔗</div>
-              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 18, color: c.goldL, fontWeight: 600, marginBottom: 4 }}>Share Your Profile</div>
-              <div style={{ color: c.sub, fontSize: 12, marginBottom: 14, lineHeight: 1.6 }}>Get more calls. Get more payments.<br />Share your profile link anywhere.</div>
-              <Btn onClick={() => { const link = `${window.location.origin}/?host=${encodeURIComponent(live.name)}`; navigator.clipboard.writeText(link); toast("Profile link copied! 📋"); }} full>📋 Copy Your Profile Link</Btn>
-              <div style={{ color: c.dim, fontSize: 10, marginTop: 8 }}>{window.location.origin}/?host={live.name}</div>
+            <div style={{ background: `linear-gradient(135deg,${c.gold}08,${c.goldD})`, border: `1px solid ${c.gold}40`, borderRadius: 14, marginBottom: 16, overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>🔗</span>
+                <span style={{ fontWeight: 700, fontSize: 13, color: c.goldL, flex: 1 }}>Share Your Profile</span>
+                <Btn small onClick={() => { const link = `${window.location.origin}/?host=${encodeURIComponent(live.name)}`; navigator.clipboard.writeText(link); toast("Profile link copied! 📋"); }}>📋 Copy Link</Btn>
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>

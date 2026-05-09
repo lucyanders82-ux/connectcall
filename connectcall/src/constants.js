@@ -37,6 +37,7 @@ export const GLOBAL_CSS = `
   ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:${c.bg}}::-webkit-scrollbar-thumb{background:${c.gold};border-radius:2px}
   @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes fadeOut { to { opacity: 0; transform: translateY(-8px); } }
   @keyframes pulse{0%,100%{box-shadow:0 0 0 0 ${c.green}44}70%{box-shadow:0 0 8px transparent}}
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes glow{0%,100%{box-shadow:0 0 20px ${c.gold}25}50%{box-shadow:0 0 40px ${c.gold}55}}
