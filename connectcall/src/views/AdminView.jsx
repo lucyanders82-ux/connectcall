@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { c, S, ADMIN_TOKEN } from "../constants";
-import { Btn, Avatar, OnlineDot } from "../components/UI";
+import { Btn, Avatar, OnlineDot, FolderCard } from "../components/UI";
 import { AdminRefundActions } from "../components/AdminRefundActions";
 import { WithdrawBtn } from "../components/WithdrawBtn";
 import { apiTriggerAIVerdict } from "../api";
@@ -453,21 +453,7 @@ export function AdminView({
                 </div>
               )}
               {historyPays.length > 0 && (
-                <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden" }}>
-                  <div onClick={() => setAdminPayOpen(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-                    onMouseEnter={e => e.currentTarget.style.background = c.surface}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 18 }}>📁</span>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>Payment History</div>
-                        <div style={{ color: c.sub, fontSize: 12 }}>{historyPays.length} transaction{historyPays.length !== 1 ? "s" : ""}</div>
-                      </div>
-                    </div>
-                    <span style={{ color: c.sub, fontSize: 18 }}>{adminPayOpen ? "▲" : "▼"}</span>
-                  </div>
-                  {adminPayOpen && (
-                    <div style={{ padding: "0 12px 12px" }}>
+                <FolderCard icon="📁" title="Payment History" subtitle={`${historyPays.length} transaction${historyPays.length !== 1 ? "s" : ""}`} count={historyPays.length} accentColor={c.gold}>
                       {historyPays.map(pay => {
                         const host  = users.find(u => u.id === (pay.target_user_id || pay.targetUserId));
                         const isExp = expandedPayments.has(pay.id);
@@ -493,9 +479,7 @@ export function AdminView({
                           </div>
                         );
                       })}
-                    </div>
-                  )}
-                </div>
+                    </FolderCard>
               )}
             </div>
           );
@@ -519,19 +503,9 @@ export function AdminView({
               }
               {doneConfs.length > 0 && (
                 <>
-                  <button onClick={() => setShowCallHistory(h => !h)} style={{ width: "100%", background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: showCallHistory ? 10 : 0 }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = c.gold}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = c.border}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 18 }}>📂</span>
-                      <div style={{ textAlign: "left" }}>
-                        <div style={{ fontWeight: 600, color: c.text, fontSize: 14 }}>Completed Calls</div>
-                        <div style={{ fontSize: 11, color: c.sub }}>{doneConfs.length} call{doneConfs.length !== 1 ? "s" : ""}</div>
-                      </div>
-                    </div>
-                    <span style={{ color: c.sub, fontSize: 16 }}>{showCallHistory ? "▲" : "▼"}</span>
-                  </button>
-                  {showCallHistory && <div className="fu">{doneConfs.map(conf => renderCallCard(conf, false))}</div>}
+                  <FolderCard icon="📂" title="Completed Calls" subtitle={`${doneConfs.length} call${doneConfs.length !== 1 ? "s" : ""}`} count={doneConfs.length} accentColor={c.green}>
+                    {doneConfs.map(conf => renderCallCard(conf, false))}
+                  </FolderCard>
                 </>
               )}
             </>
@@ -613,21 +587,7 @@ export function AdminView({
             {refundReqs.filter(r => r.status === "approved" || r.status === "denied" || r.status === "rejected").length > 0 && (() => {
               const resolved = refundReqs.filter(r => r.status === "approved" || r.status === "denied" || r.status === "rejected");
               return (
-                <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden", marginTop: 12 }}>
-                  <div onClick={() => setAdminPayOpen(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-                    onMouseEnter={e => e.currentTarget.style.background = c.surface}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 18 }}>📁</span>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>Resolved Refunds</div>
-                        <div style={{ color: c.sub, fontSize: 12 }}>{resolved.length} refund{resolved.length !== 1 ? "s" : ""}</div>
-                      </div>
-                    </div>
-                    <span style={{ color: c.sub, fontSize: 18 }}>{adminPayOpen ? "▲" : "▼"}</span>
-                  </div>
-                  {adminPayOpen && (
-                    <div style={{ padding: "0 12px 12px" }}>
+                <FolderCard icon="📁" title="Resolved Refunds" subtitle={`${resolved.length} refund${resolved.length !== 1 ? "s" : ""}`} count={resolved.length} accentColor={c.sub} style={{ marginTop: 12 }}>
                       {resolved.map(r => {
                         const pay  = payments.find(p => p.id === r.payment_id);
                         const host = users.find(u => u.id === pay?.target_user_id);
@@ -646,9 +606,7 @@ export function AdminView({
                           </div>
                         );
                       })}
-                    </div>
-                  )}
-                </div>
+                    </FolderCard>
               );
             })()}
           </div>
@@ -684,25 +642,9 @@ export function AdminView({
 
             {/* FIXED: resolved disputes folder starts CLOSED (resolvedDisputesOpen defaults to false) */}
             {resolvedDisputes.length > 0 && (
-              <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden" }}>
-                <div onClick={() => setResolvedDisputesOpen(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-                  onMouseEnter={e => e.currentTarget.style.background = c.surface}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 18 }}>📁</span>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>Resolved Disputes</div>
-                      <div style={{ color: c.sub, fontSize: 12 }}>{resolvedDisputes.length} dispute{resolvedDisputes.length !== 1 ? "s" : ""}</div>
-                    </div>
-                  </div>
-                  <span style={{ color: c.sub, fontSize: 18 }}>{resolvedDisputesOpen ? "▲" : "▼"}</span>
-                </div>
-                {resolvedDisputesOpen && (
-                  <div style={{ padding: "0 12px 12px" }}>
-                    {resolvedDisputes.map(d => renderDisputeCard(d))}
-                  </div>
-                )}
-              </div>
+              <FolderCard icon="📁" title="Resolved Disputes" subtitle={`${resolvedDisputes.length} dispute${resolvedDisputes.length !== 1 ? "s" : ""}`} count={resolvedDisputes.length} accentColor={c.sub}>
+                {resolvedDisputes.map(d => renderDisputeCard(d))}
+              </FolderCard>
             )}
           </div>
         )}

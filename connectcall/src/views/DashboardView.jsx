@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { c, S, PAYOUT_PROVIDERS, CURRENCY } from "../constants";
 import { safeArr, normaliseUser } from "../utils";
-import { Btn, Modal, Field, Avatar, Chip, OnlineDot, SectionHeader, PhotoPick, MultiPick } from "../components/UI";
+import { Btn, Modal, Field, Avatar, Chip, OnlineDot, SectionHeader, PhotoPick, MultiPick, FolderCard, StatusBadge } from "../components/UI";
 import { HostRating, HostResponseRate } from "../components/HostRating";
 import { MarkDoneBtn } from "../components/MarkDoneBtn";
 import { HostRefundRow } from "../components/HostRefundRow";
@@ -480,21 +480,7 @@ export function DashboardView({
                   )}
 
                   {closedReqs.length > 0 && (
-                    <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden" }}>
-                      <div onClick={() => setHostHistoryOpen(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-                        onMouseEnter={e => e.currentTarget.style.background = c.surface}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ fontSize: 18 }}>📁</span>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: 14 }}>Previous Requests</div>
-                            <div style={{ color: c.sub, fontSize: 12 }}>{closedReqs.length} completed call{closedReqs.length !== 1 ? "s" : ""}</div>
-                          </div>
-                        </div>
-                        <span style={{ color: c.sub, fontSize: 18 }}>{hostHistoryOpen ? "▲" : "▼"}</span>
-                      </div>
-                      {hostHistoryOpen && (
-                        <div style={{ padding: "0 12px 12px" }}>
+                    <FolderCard icon="📁" title="Previous Requests" subtitle={`${closedReqs.length} completed call${closedReqs.length !== 1 ? "s" : ""}`} count={closedReqs.length} accentColor={c.gold}>
                           {closedReqs.map(pay => {
                             const conf = (callConfirmations || []).find(cc => cc.payment_id === pay.id);
                             const dispute = disputes.find(d => d.payment_id === pay.id);
@@ -517,9 +503,7 @@ export function DashboardView({
                               </div>
                             );
                           })}
-                        </div>
-                      )}
-                    </div>
+                        </FolderCard>
                   )}
                 </>
             }

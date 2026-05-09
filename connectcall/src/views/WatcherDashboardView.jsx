@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { c, S, API_BASE } from "../constants";
 import { normaliseUser } from "../utils";
-import { Btn, Avatar, OnlineDot } from "../components/UI";
+import { Btn, Avatar, OnlineDot, FolderCard } from "../components/UI";
 import { supabase } from "../supabase";
 
 // ── Utility: build a WhatsApp/Telegram link from any number format ──────────
@@ -454,28 +454,10 @@ export function WatcherDashboardView({
           )}
 
           {previousPayments.length > 0 && (
-            <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden" }}>
-              <div onClick={() => setHistoryOpen(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-                onMouseEnter={e => e.currentTarget.style.background = c.surface}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 18 }}>📁</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>Previous Calls</div>
-                    <div style={{ color: c.sub, fontSize: 12 }}>{previousPayments.length} completed call{previousPayments.length !== 1 ? "s" : ""}</div>
-                  </div>
-                </div>
-                <span style={{ color: c.sub, fontSize: 18 }}>{historyOpen ? "▲" : "▼"}</span>
-              </div>
-              {historyOpen && (
-                <div style={{ padding: "0 12px 12px" }}>
-                  {previousPayments.map(p => <PaymentCard key={p.id} p={p} isLive={false} />)}
-                </div>
-              )}
-            </div>
+            <FolderCard icon="📁" title="Previous Calls" subtitle={`${previousPayments.length} completed call${previousPayments.length !== 1 ? "s" : ""}`} count={previousPayments.length} accentColor={c.gold}>
+              {previousPayments.map(p => <PaymentCard key={p.id} p={p} isLive={false} />)}
+            </FolderCard>
           )}
-        </>
-      )}
     </div>
   );
 }
