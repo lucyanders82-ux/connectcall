@@ -94,14 +94,27 @@ export function WatcherDashboardView({
           </div>
         )}
         {/* Show upload button if watcher needs to submit evidence */}
-        {dispute?.status === "watcher_evidence" && 
+        {dispute?.status === "watcher_evidence" &&
          !dispute?.watcher_evidence_url &&
          !dispute?.status?.startsWith("resolved") && (
-          <EvidenceUploadButton
-            disputeId={dispute.id}
-            role="watcher"
-            onSubmitEvidence={onSubmitEvidence}
-          />
+          <div>
+            {dispute?.watcher_evidence_deadline && (() => {
+              const minsLeft = Math.max(0, Math.round((new Date(dispute.watcher_evidence_deadline) - Date.now()) / 60000));
+              return (
+                <div style={{ fontSize: 12, color: minsLeft <= 5 ? c.red : c.orange, marginBottom: 8, fontWeight: 600 }}>
+                  {minsLeft > 0 ? `⏱ You have ${minsLeft} minute${minsLeft !== 1 ? 's' : ''} to upload your counter-evidence` : '⚠️ Deadline passed — submit now before auto-resolution'}
+                </div>
+              );
+            })()}
+            <div style={{ fontSize: 12, color: c.sub, marginBottom: 8 }}>
+              Upload a screenshot of your call log showing no incoming call from the host during the booking window.
+            </div>
+            <EvidenceUploadButton
+              disputeId={dispute.id}
+              role="watcher"
+              onSubmitEvidence={onSubmitEvidence}
+            />
+          </div>
         )}
         {/* Show verdict info if resolved */}
         {(dispute?.status === "resolved_host" || dispute?.status === "resolved_watcher") && (
@@ -117,6 +130,7 @@ export function WatcherDashboardView({
     // ── EvidenceUploadButton (real file picker + Supabase Storage) ────────────
   const EvidenceUploadButton = ({ disputeId, role, onSubmitEvidence }) => {
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
     const fileInputRef = useRef(null);
 
     const handleFilePick = async (e) => {
@@ -133,12 +147,23 @@ export function WatcherDashboardView({
       }
 
       setUploading(true);
+      setUploadProgress(0);
+
+      // Simulate progress while upload runs
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => prev < 85 ? prev + 12 : prev);
+      }, 200);
+
       try {
         const { apiUploadEvidence } = await import('../api.js');
         const url = await apiUploadEvidence(file, user?.id);
+        clearInterval(progressInterval);
+        setUploadProgress(100);
         await onSubmitEvidence(disputeId, user?.id, role, url);
         toast('Evidence submitted successfully', 'success');
       } catch (e) {
+        clearInterval(progressInterval);
+        setUploadProgress(0);
         toast('Failed to upload: ' + (e.message || 'Unknown error'), 'error');
       }
       setUploading(false);
@@ -159,8 +184,19 @@ export function WatcherDashboardView({
           disabled={uploading}
           onClick={() => fileInputRef.current?.click()}
         >
-          {uploading ? 'Uploading…' : `📎 Upload ${role === 'host' ? 'Call Log' : 'Counter-Evidence'}`}
+          {uploading ? `Uploading…` : `📎 Upload ${role === 'host' ? 'Call Log' : 'Counter-Evidence'}`}
         </Btn>
+        {uploading && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: c.sub, marginBottom: 4 }}>
+              <span>Uploading screenshot…</span>
+              <span>{uploadProgress}%</span>
+            </div>
+            <div style={{ height: 4, borderRadius: 4, background: c.surface, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${uploadProgress}%`, background: `linear-gradient(90deg, ${c.blue}, #60a5fa)`, borderRadius: 4, transition: 'width 0.2s ease' }} />
+            </div>
+          </div>
+        )}
       </>
     );
   };
@@ -400,7 +436,7 @@ export function WatcherDashboardView({
                     <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 14, fontWeight: 700, color: secondsLeft <= 30 ? c.red : c.orange }}>{formatCountdown(secondsLeft)}</span>
                   </div>
                   <Btn small variant="orange" disabled={refunding} onClick={async () => { setRefunding(true); await onRefundRequest(p.id, "Host contact revealed but host did not reach out in time"); setRefunding(false); }} full>
-                    {refunding ? "Requesting…" : "↩ Host didn't contact me (70% refund)"}
+                    {refunding ? "Requesting…" : "↩ Host didn't contact me (95% refund)"}
                   </Btn>
                 </div>
               )}

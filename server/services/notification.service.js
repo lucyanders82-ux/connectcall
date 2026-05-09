@@ -89,12 +89,12 @@ export async function notifyHostDisputeOpened(hostContact, watcherName, evidence
   }
 }
 
-export async function notifyWatcherCounterEvidence(watcherContact) {
+export async function notifyWatcherCounterEvidence(watcherContact, deadlineMinutes = 20) {
   try {
     const to = formatGhanaNumber(watcherContact);
     await sms.send({
       to: [to],
-      message: `ConnectCall: The host has submitted call evidence. You have 20 mins to upload your counter-evidence (call log screenshot) at connectcall.vercel.app.`,
+      message: `ConnectCall: The host has submitted call log evidence. You now have ${deadlineMinutes} minutes to upload your counter-evidence at connectcall.vercel.app. If you don't respond in time, the dispute will be resolved automatically.`,
       from: process.env.AT_SENDER_ID || undefined,
     });
     console.log(`[SMS] Watcher counter-evidence notified — ${to}`);

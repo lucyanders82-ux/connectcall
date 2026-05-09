@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { c, S, PAYOUT_PROVIDERS, CURRENCY } from "../constants";
 import { safeArr, normaliseUser } from "../utils";
 import { Btn, Modal, Field, Avatar, Chip, OnlineDot, SectionHeader, PhotoPick, MultiPick } from "../components/UI";
@@ -25,6 +25,7 @@ export function DashboardView({
   const [ef, setEf]               = useState({});
   const [busy, setBusy]           = useState(false);
   const [requestingFollowup, setRequestingFollowup] = useState({});
+  const [markDoneCountdown, setMarkDoneCountdown] = useState({}); // { [payId]: secondsLeft }
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30000);
@@ -131,6 +132,7 @@ export function DashboardView({
     // ── Host Evidence Upload (real file picker + Supabase Storage) ────────────
   const HostEvidenceUpload = ({ disputeId }) => {
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
     const fileInputRef = useRef(null);
 
     const handleFilePick = async (e) => {
@@ -147,12 +149,22 @@ export function DashboardView({
       }
 
       setUploading(true);
+      setUploadProgress(0);
+
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => prev < 85 ? prev + 12 : prev);
+      }, 200);
+
       try {
         const { apiUploadEvidence } = await import('../api.js');
         const url = await apiUploadEvidence(file, user?.id);
+        clearInterval(progressInterval);
+        setUploadProgress(100);
         await onSubmitEvidence(disputeId, user?.id, 'host', url);
         toast('Evidence submitted — watcher will be notified', 'success');
       } catch (e) {
+        clearInterval(progressInterval);
+        setUploadProgress(0);
         toast('Failed to upload: ' + (e.message || 'Unknown error'), 'error');
       }
       setUploading(false);
@@ -175,6 +187,17 @@ export function DashboardView({
         >
           {uploading ? 'Uploading…' : '📎 Upload Call Log Screenshot'}
         </Btn>
+        {uploading && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: c.sub, marginBottom: 4 }}>
+              <span>Uploading screenshot…</span>
+              <span>{uploadProgress}%</span>
+            </div>
+            <div style={{ height: 4, borderRadius: 4, background: c.surface, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${uploadProgress}%`, background: `linear-gradient(90deg, ${c.blue}, #60a5fa)`, borderRadius: 4, transition: 'width 0.2s ease' }} />
+            </div>
+          </div>
+        )}
       </>
     );
   };
@@ -445,8 +468,39 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                                                         {pay.status === "confirmed" && !callDone && !conf && !isDisputed && !refund && (
   <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
     <div style={{ flex: 1 }}>
-      <MarkDoneBtn payId={pay.id} live={live} onMarkDone={onMarkDone} />
-    </div>
+                      <MarkDoneBtn
+                        payId={pay.id}
+                        live={live}
+                        onMarkDone={async (...args) => {
+                          const result = await onMarkDone(...args);
+                          // If server returns secondsLeft, start a countdown in UI
+                          if (result?.secondsLeft) {
+                            let secs = result.secondsLeft;
+                            setMarkDoneCountdown(prev => ({ ...prev, [pay.id]: secs }));
+                            const t = setInterval(() => {
+                              secs -= 1;
+                              if (secs <= 0) {
+                                clearInterval(t);
+                                setMarkDoneCountdown(prev => { const n = { ...prev }; delete n[pay.id]; return n; });
+                              } else {
+                                setMarkDoneCountdown(prev => ({ ...prev, [pay.id]: secs }));
+                              }
+                            }, 1000);
+                          }
+                          return result;
+                        }}
+                      />
+                      {markDoneCountdown[pay.id] > 0 && (
+                        <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: `${c.orange}15`, border: `1px solid ${c.orange}30` }}>
+                          <div style={{ fontSize: 12, color: c.orange, fontWeight: 600 }}>
+                            ⏱ Wait {markDoneCountdown[pay.id]}s — call must be at least 2 minutes
+                          </div>
+                          <div style={{ height: 3, borderRadius: 3, background: c.surface, marginTop: 6, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${(markDoneCountdown[pay.id] / 120) * 100}%`, background: c.orange, borderRadius: 3, transition: 'width 1s linear' }} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
     {!pay.call_initiated_at && (
       <Btn
         small variant="red"

@@ -104,8 +104,9 @@ export default function App() {
   }, [currentUser?.id]);
 
   // ── realtime subscriptions ─────────────────────────────────────────────────
+  // ── realtime subscriptions ─────────────────────────────────────────────────
   useEffect(() => {
-    const channel = supabase.channel("realtime-updates")
+    const channel = supabase.channel(`realtime-updates-${currentUser?.id || "guest"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, payload => {
         const newRow = payload.new;
         setPayments(prev => { const exists = prev.find(p => p.id === newRow.id); return exists ? prev.map(p => p.id === newRow.id ? newRow : p) : [newRow, ...prev]; });
@@ -135,15 +136,21 @@ export default function App() {
       // ── NEW: disputes & follow-up realtime ──
       .on("postgres_changes", { event: "*", schema: "public", table: "disputes" }, payload => {
         const newRow = payload.new;
+        if (!newRow) return;
         setDisputes(prev => { const exists = prev.find(d => d.id === newRow.id); return exists ? prev.map(d => d.id === newRow.id ? newRow : d) : [newRow, ...prev]; });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "followup_requests" }, payload => {
         const newRow = payload.new;
+        if (!newRow) return;
         setFollowupReqs(prev => { const exists = prev.find(f => f.id === newRow.id); return exists ? prev.map(f => f.id === newRow.id ? newRow : f) : [newRow, ...prev]; });
+      })
+      // Catch DELETE events on disputes
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "disputes" }, payload => {
+        setDisputes(prev => prev.filter(d => d.id !== payload.old.id));
       })
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, []);
+  }, [currentUser?.id]);
 
   // ── toast helper ──────────────────────────────────────────────────────────
   const toast = useCallback((msg, type = "success") => {
@@ -337,9 +344,10 @@ export default function App() {
   const handleMarkDone = async (paymentId, targetUser) => {
     const res = await fetch(`${API_BASE}/api/call/mark-done`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paymentId, hostId: currentUser?.id }) });
     const result = await res.json();
-    if (result.error) { toast(result.error, "error"); return; }
-    if (result.alreadyMarked) { toast("Already marked — awaiting watcher confirmation"); return; }
+    if (result.error) { toast(result.error, "error"); return result; }
+    if (result.alreadyMarked) { toast("Already marked — awaiting watcher confirmation"); return result; }
     toast("Call marked done! Waiting for watcher to confirm…");
+    return result;
   };
 
   const handleConfirmCall = async (confirmationId, response) => {
