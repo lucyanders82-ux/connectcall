@@ -868,19 +868,26 @@ TELEGRAM:
 - Date and time
 - Telegram dark or blue theme
 
-SIGNS OF FAKE SCREENSHOT:
-- Inconsistent fonts
-- Misaligned UI elements
-- Blurry areas around duration
-- Odd timestamps
-- Wrong app colors
+SIGNS OF FAKE OR INVALID SCREENSHOT:
+- Inconsistent fonts or misaligned UI elements
+- Blurry areas around duration or timestamp
+- Odd timestamps or wrong app colors
+- CROPPED screenshot — must show full screen including status bar (time, battery, signal) at top
+- Screenshot shows only part of the call log — full context required
+- Duration or contact name appears cut off or partially hidden
+- Background looks edited or artificially extended
+- Screenshot dimensions look unusual (too narrow, too square)
+- No visible status bar at top of screen
 
 JUDGMENT RULES:
 1. HOST screenshot should show OUTGOING call to watcher's number
 2. WATCHER screenshot should show NO incoming call from host
 3. Call duration must be AT LEAST 2 MINUTES for host to win
 4. Duration < 2 minutes → verdict = "watcher"
-5. Edited screenshot → verdict = "watcher"
+5. Edited or cropped screenshot → verdict = "watcher"
+6. No status bar visible at top of screenshot → verdict = "watcher" (likely cropped)
+7. Screenshot appears to show only a portion of the screen → verdict = "watcher"
+8. If you cannot clearly read the full call duration → verdict = "watcher"
 
 Return ONLY a JSON object (no other text):
 {
