@@ -7,6 +7,10 @@ const router = express.Router();
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const FEE_PERCENT = parseFloat(process.env.PLATFORM_FEE_PERCENT || '20');
 const EARLY_REFUND_PCT = parseFloat(process.env.EARLY_REFUND_PERCENT || '70');
+const REFUND_HOST_GHOSTED = 95;      // Host never clicked link
+const REFUND_HOST_NO_MARKDONE = 80;  // Host clicked but never marked done
+const REFUND_HOST_REJECTED = 90;     // Host rejected themselves
+const REFUND_DISPUTE_WATCHER = 85;   // Dispute ruled for watcher
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Window (ms) during which watcher can claim "host didn't contact me"
@@ -463,7 +467,7 @@ async function openDisputeWithEvidence(pay, reason, watcherId, callConfirmation,
 // ── Existing: "Host didn't contact me" within 3-min window (host never marked done) ──
 async function handleNoContactClaim(pay, reason, watcherId, res) {
   const totalPaid = parseFloat(pay.total_charged || pay.amount);
-  const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
+  const refundAmount = parseFloat((totalPaid * REFUND_HOST_GHOSTED / 100).toFixed(2));
 
   let paystackRefundSuccess = false;
   if (pay.paystack_ref) {
@@ -935,7 +939,7 @@ async function resolveDisputeOutcome(disputeId, verdict) {
 
   const payment = dispute.payment;
   const totalPaid = parseFloat(payment.total_charged || payment.amount);
-  const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
+  const refundAmount = parseFloat((totalPaid * REFUND_DISPUTE_WATCHER / 100).toFixed(2));
   const now = new Date().toISOString();
 
   if (verdict === 'watcher') {
@@ -956,7 +960,7 @@ async function resolveDisputeOutcome(disputeId, verdict) {
       refund_amount: refundAmount,
       resolved_at: now,
       auto_refunded: true,
-      refund_percentage: EARLY_REFUND_PCT,
+      refund_percentage: REFUND_DISPUTE_WATCHER,
     }).eq('dispute_id', disputeId);
 
     // UPDATE THE DISPUTE STATUS
@@ -1227,7 +1231,7 @@ const { data: initiatedNotDone } = await supabase
         const { data: pay } = await supabase.from('payments').select('*').eq('id', p.id).single();
         if (pay) {
           const totalPaid = parseFloat(pay.total_charged || pay.amount);
-          const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
+          const refundAmount = parseFloat((totalPaid * REFUND_HOST_GHOSTED / 100).toFixed(2));
           if (pay.paystack_ref) {
             try {
               await paystackRequest('POST', '/refund', {
@@ -1249,7 +1253,7 @@ const { data: initiatedNotDone } = await supabase
                         refund_type: 'auto_15_min',
             resolved_at: new Date().toISOString(),
             auto_refunded: true,
-            refund_percentage: EARLY_REFUND_PCT,
+            refund_percentage: REFUND_HOST_GHOSTED,
           }]);
           autoRefunded++;
         }
@@ -1268,7 +1272,7 @@ if (initiatedNotDone?.length) {
     if (existingConf || existingRefund) continue;
     if (pay) {
       const totalPaid = parseFloat(pay.total_charged || pay.amount);
-      const refundAmount = parseFloat((totalPaid * EARLY_REFUND_PCT / 100).toFixed(2));
+      const refundAmount = parseFloat((totalPaid * REFUND_HOST_NO_MARKDONE / 100).toFixed(2));
       if (pay.paystack_ref) {
         try {
           await paystackRequest('POST', '/refund', {
@@ -1290,7 +1294,7 @@ if (initiatedNotDone?.length) {
         refund_type: 'auto_30_min_no_markdone',
         resolved_at: new Date().toISOString(),
         auto_refunded: true,
-        refund_percentage: EARLY_REFUND_PCT,
+        refund_percentage: REFUND_HOST_NO_MARKDONE,
       }]);
 
       // Notify both parties

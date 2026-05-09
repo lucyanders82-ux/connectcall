@@ -651,7 +651,8 @@ app.post('/api/call/reject', async (req, res) => {
     if (existingRefund) return res.status(400).json({ error: 'A refund already exists for this payment' });
 
     const totalPaid = parseFloat(pay.total_charged || pay.amount);
-    const refundAmount = parseFloat((totalPaid * parseFloat(process.env.EARLY_REFUND_PERCENT || '70') / 100).toFixed(2));
+    const REFUND_HOST_REJECTED = 90;
+const refundAmount = parseFloat((totalPaid * REFUND_HOST_REJECTED / 100).toFixed(2));
 
     // Paystack refund
     if (pay.paystack_ref) {
