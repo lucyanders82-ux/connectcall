@@ -32,10 +32,16 @@ export function DashboardView({
   const myCalls = calls.filter(cl => cl.target_user_id === user.id || cl.targetUserId === user.id);
   const myVP    = verifyPrompts.filter(v => !v.answered && myPay.some(p => p.id === v.payment_id || p.id === v.paymentId));
   const hostRefundReqs = refundReqs.filter(r => r.status === "pending_host" && myPay.some(p => p.id === r.payment_id));
-  const missedReqs = myPay.filter(p =>
-    (p.status === "refunded_partial" || p.status === "cancelled") &&
-    !followupReqs.find(f => f.payment_id === p.id && f.status === "accepted")
-  );
+  const missedReqs = myPay.filter(p => {
+    if (p.status !== "refunded_partial" && p.status !== "cancelled") return false;
+    // Exclude if dispute exists — was a contested call not a missed one
+    const hasDispute = disputes.find(d => d.payment_id === p.id);
+    if (hasDispute) return false;
+    // Exclude if followup already accepted
+    const followup = followupReqs.find(f => f.payment_id === p.id);
+    if (followup?.status === "accepted") return false;
+    return true;
+  });
 
   const liveReqs = myPay.filter(p => {
     if (p.status === "disputed") {
