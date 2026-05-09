@@ -34,9 +34,11 @@ export function DashboardView({
   const hostRefundReqs = refundReqs.filter(r => r.status === "pending_host" && myPay.some(p => p.id === r.payment_id));
   const missedReqs = myPay.filter(p => {
     if (p.status !== "refunded_partial" && p.status !== "cancelled") return false;
-    // Exclude if dispute exists — was a contested call not a missed one
-    const hasDispute = disputes.find(d => d.payment_id === p.id);
-    if (hasDispute) return false;
+    // Exclude if refund was due to dispute
+    const refund = refundReqs.find(r => r.payment_id === p.id);
+    if (refund?.refund_type === "dispute_evidence" || refund?.refund_type === "auto_dispute") return false;
+    // Exclude if host rejected — that's final, no retry
+    if (refund?.refund_type === "host_rejected") return false;
     // Exclude if followup already accepted
     const followup = followupReqs.find(f => f.payment_id === p.id);
     if (followup?.status === "accepted") return false;
