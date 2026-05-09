@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Nav, Toast, MobileNav, FeedbackButton } from "./components/UI";
 import { supabase } from "./supabase";
 
 // ── constants / utils / api ───────────────────────────────────────────────────
@@ -537,10 +538,10 @@ export default function App() {
           onAnswerVerify={handleAnswerVerify} toast={toast} setView={setView}
           refundReqs={refundReqs} onHostApproveRefund={handleHostApproveRefund}
           callConfirmations={callConfirmations}
-          disputes={disputes}                                              // NEW
-          followupReqs={followupReqs}                                       // NEW
-          onSubmitEvidence={handleSubmitEvidence}                           // NEW
-          onRequestFollowup={async (paymentId) => {                        // NEW
+          disputes={disputes}
+          followupReqs={followupReqs}
+          onSubmitEvidence={handleSubmitEvidence}
+          onRequestFollowup={async (paymentId) => {
             const result = await apiRequestFollowup(paymentId, currentUser?.id);
             if (result.error) { toast(result.error, "error"); return; }
             const { data: fRows } = await supabase.from("followup_requests").select("*").order("requested_at", { ascending: false });
@@ -555,10 +556,10 @@ export default function App() {
           onRefundRequest={handleRefundRequest} toast={toast} setView={setView}
           callConfirmations={callConfirmations} onConfirmCall={handleConfirmCall}
           favorites={favorites} toggleFavorite={toggleFavorite}
-          disputes={disputes}                                              // NEW
-          followupReqs={followupReqs}                                       // NEW
-          onSubmitEvidence={handleSubmitEvidence}                           // NEW
-          onAcceptFollowup={handleAcceptFollowup}                           // NEW
+          disputes={disputes}
+          followupReqs={followupReqs}
+          onSubmitEvidence={handleSubmitEvidence}
+          onAcceptFollowup={handleAcceptFollowup}
         />
       )}
       {view === "admin" && isAdmin && (
@@ -568,9 +569,12 @@ export default function App() {
           onPushVerify={handlePushVerify} setView={setView} confirmPayment={confirmPayment}
           refundReqs={refundReqs} callConfirmations={callConfirmations}
           onApproveRefund={handleApproveRefund} onDenyRefund={handleDenyRefund} toast={toast}
-          disputes={disputes}                                              // NEW
+          disputes={disputes}
         />
       )}
+
+      {/* ── Feedback Button — always visible in bottom-right corner ── */}
+      <FeedbackButton />
     </>
   );
 }

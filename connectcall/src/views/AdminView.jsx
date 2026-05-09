@@ -9,7 +9,7 @@ export function AdminView({
   users, payments, calls, wallet, verifyPrompts, onRelease, reports,
   onPushVerify, setView, confirmPayment, refundReqs, callConfirmations,
   onApproveRefund, onDenyRefund, toast,
-  disputes = [],  // NEW
+  disputes = [],
 }) {
   const [tab, setTab] = useState("overview");
   const [showPayHistory,  setShowPayHistory]  = useState(false);
@@ -17,16 +17,17 @@ export function AdminView({
   const [adminPayOpen,    setAdminPayOpen]    = useState(false);
   const [expandedPayments, setExpandedPayments] = useState(new Set());
   const [expandedCalls,    setExpandedCalls]    = useState(new Set());
-  const [expandedDisputes, setExpandedDisputes] = useState(new Set()); // NEW
+  const [expandedDisputes, setExpandedDisputes] = useState(new Set());
   const [aiVerdictBusy, setAIVerdictBusy] = useState({});
-const [localResolved, setLocalResolved] = useState(new Set()); // track locally resolved disputes
+  const [localResolved, setLocalResolved] = useState(new Set());
+  // FIXED: resolved disputes folder starts CLOSED
+  const [resolvedDisputesOpen, setResolvedDisputesOpen] = useState(false);
 
   const pendingRefunds  = refundReqs.filter(r => r.status === "pending" || r.status === "pending_host");
   const pendingPayments = payments.filter(p => p.status === "pending" && p.paystack_verified);
   const hostsWithPayout    = users.filter(u => u.role === "host" && u.paystack_recipient_code).length;
   const hostsWithoutPayout = users.filter(u => u.role === "host" && !u.paystack_recipient_code).length;
 
-  // ── NEW: Dispute stats ──
   const openDisputes       = disputes.filter(d => d.status === "open" || d.status === "host_evidence" || d.status === "watcher_evidence");
   const escalatedDisputes  = disputes.filter(d => d.status === "escalated_admin");
   const aiPendingDisputes  = disputes.filter(d => d.status === "ai_verdict_pending");
@@ -52,8 +53,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
     a.click(); URL.revokeObjectURL(url);
   };
 
-  // ── NEW: Trigger AI verdict manually ──
-    // ── Trigger AI verdict using proper API function ──
   const handleTriggerAIVerdict = async (disputeId) => {
     setAIVerdictBusy(prev => ({ ...prev, [disputeId]: true }));
     try {
@@ -61,6 +60,10 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
       if (result.error) {
         toast("AI verdict failed: " + result.error, "error");
       } else {
+        // FIXED: mark locally resolved so buttons hide immediately after AI auto-resolves
+        if (result.autoResolved) {
+          setLocalResolved(prev => new Set([...prev, disputeId]));
+        }
         toast(
           result.autoResolved
             ? `AI resolved in favor of ${result.verdict} (${result.confidence}% confidence)`
@@ -105,7 +108,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
     );
   };
 
-  // ── NEW: Dispute Card ──
   const renderDisputeCard = (dispute) => {
     const pay  = payments.find(p => p.id === dispute.payment_id);
     const host = users.find(u => u.id === pay?.target_user_id);
@@ -115,6 +117,13 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
     const isEscalated = dispute.status === "escalated_admin";
     const isResolved = dispute.status === "resolved_host" || dispute.status === "resolved_watcher";
     const isAI = dispute.status === "ai_verdict_pending";
+
+    // FIXED: hide action buttons if locally resolved OR if DB says resolved OR if AI just ran
+    const showActions = (isOpen || isEscalated) &&
+      !localResolved.has(dispute.id) &&
+      !isResolved &&
+      !isAI &&
+      (dispute.host_evidence_url || dispute.watcher_evidence_url);
 
     const statusColors = {
       open: c.orange, host_evidence: c.gold, watcher_evidence: c.gold,
@@ -127,24 +136,20 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
       <div key={dispute.id} style={{ background: c.card, border: `2px solid ${borderColor}40`, borderRadius: 14, marginBottom: 12, overflow: "hidden" }}>
         <div onClick={() => toggleDispute(dispute.id)} style={{ padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", flexWrap: "wrap", gap: 10 }}>
           <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 18 }}>{isOpen ? "⚠️" : isAI ? "🧠" : isEscalated ? "🔍" : isResolved ? (dispute.status === "resolved_host" ? "🏆" : "💸") : "⚪"}</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-                      {host?.name || "Host"} ←→ {watcher?.name || pay?.watcher_name || "Watcher"}
-                    </div>
-                    <div style={{ fontSize: 11, color: c.sub }}>
-                      {S}{pay?.total_charged || pay?.amount || 0} · Opened {new Date(dispute.created_at).toLocaleString()}
-                    </div>
-                  </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 18 }}>{isOpen ? "⚠️" : isAI ? "🧠" : isEscalated ? "🔍" : isResolved ? (dispute.status === "resolved_host" ? "🏆" : "💸") : "⚪"}</span>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>
+                  {host?.name || "Host"} ←→ {watcher?.name || pay?.watcher_name || "Watcher"}
+                </div>
+                <div style={{ fontSize: 11, color: c.sub }}>
+                  {S}{pay?.total_charged || pay?.amount || 0} · Opened {new Date(dispute.created_at).toLocaleString()}
                 </div>
               </div>
+            </div>
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{
-              padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
-              background: `${borderColor}20`, color: borderColor,
-              border: `1px solid ${borderColor}40`,
-            }}>
+            <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: `${borderColor}20`, color: borderColor, border: `1px solid ${borderColor}40` }}>
               {dispute.status.replace(/_/g, " ").toUpperCase()}
             </span>
             <span style={{ color: c.sub }}>{isExp ? "▲" : "▼"}</span>
@@ -152,7 +157,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
         </div>
         {isExp && (
           <div style={{ padding: "0 20px 16px", borderTop: `1px solid ${c.border}`, paddingTop: 14 }}>
-            {/* Details grid */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14, fontSize: 12 }}>
               <div>
                 <div style={{ color: c.sub, marginBottom: 2 }}>Reason</div>
@@ -165,9 +169,7 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               <div>
                 <div style={{ color: c.sub, marginBottom: 2 }}>Host Evidence</div>
                 {dispute.host_evidence_url ? (
-                  <a href={dispute.host_evidence_url} target="_blank" rel="noopener noreferrer" style={{ color: c.blue, textDecoration: "underline" }}>
-                    View Screenshot ↗
-                  </a>
+                  <a href={dispute.host_evidence_url} target="_blank" rel="noopener noreferrer" style={{ color: c.blue, textDecoration: "underline" }}>View Screenshot ↗</a>
                 ) : (
                   <span style={{ color: c.dim }}>Not submitted</span>
                 )}
@@ -178,9 +180,7 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               <div>
                 <div style={{ color: c.sub, marginBottom: 2 }}>Watcher Evidence</div>
                 {dispute.watcher_evidence_url ? (
-                  <a href={dispute.watcher_evidence_url} target="_blank" rel="noopener noreferrer" style={{ color: c.blue, textDecoration: "underline" }}>
-                    View Screenshot ↗
-                  </a>
+                  <a href={dispute.watcher_evidence_url} target="_blank" rel="noopener noreferrer" style={{ color: c.blue, textDecoration: "underline" }}>View Screenshot ↗</a>
                 ) : (
                   <span style={{ color: c.dim }}>Not submitted</span>
                 )}
@@ -190,7 +190,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               </div>
             </div>
 
-            {/* AI Verdict details */}
             {dispute.ai_verdict && (
               <div style={{
                 padding: "12px 16px", borderRadius: 10, marginBottom: 12,
@@ -209,19 +208,14 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               </div>
             )}
 
-            {/* Admin actions */}
-            {(isOpen || isEscalated) && !localResolved.has(dispute.id) && !isResolved && !isAI && (dispute.host_evidence_url || dispute.watcher_evidence_url) && (
+            {/* FIXED: showActions checks local state + realtime status + AI status */}
+            {showActions && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                <Btn
-                  small variant="blue"
-                  disabled={aiVerdictBusy[dispute.id]}
-                  onClick={(e) => { e.stopPropagation(); handleTriggerAIVerdict(dispute.id); }}
-                >
+                <Btn small variant="blue" disabled={aiVerdictBusy[dispute.id]}
+                  onClick={(e) => { e.stopPropagation(); handleTriggerAIVerdict(dispute.id); }}>
                   {aiVerdictBusy[dispute.id] ? "🧠 Analysing…" : "🧠 Run AI Verdict"}
                 </Btn>
-                <Btn
-                  small variant="green"
-                  disabled={aiVerdictBusy[dispute.id]}
+                <Btn small variant="green" disabled={aiVerdictBusy[dispute.id]}
                   onClick={async (e) => {
                     e.stopPropagation();
                     setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: true }));
@@ -236,13 +230,10 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
                       else { toast("Ruled in host's favor — payment released", "success"); setLocalResolved(prev => new Set([...prev, dispute.id])); }
                     } catch (e) { toast("Request failed", "error"); }
                     setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: false }));
-                  }}
-                >
+                  }}>
                   ✅ Rule for Host
                 </Btn>
-                <Btn
-                  small variant="red"
-                  disabled={aiVerdictBusy[dispute.id]}
+                <Btn small variant="red" disabled={aiVerdictBusy[dispute.id]}
                   onClick={async (e) => {
                     e.stopPropagation();
                     setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: true }));
@@ -257,22 +248,19 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
                       else { toast("Ruled in watcher's favor — refund processed", "success"); setLocalResolved(prev => new Set([...prev, dispute.id])); }
                     } catch (e) { toast("Request failed", "error"); }
                     setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: false }));
-                  }}
-                >
+                  }}>
                   ❌ Rule for Watcher
                 </Btn>
               </div>
             )}
 
-            {/* No evidence submitted yet */}
             {isOpen && !dispute.host_evidence_url && !dispute.watcher_evidence_url && (
               <div style={{ fontSize: 12, color: c.orange, padding: "8px 12px", borderRadius: 8, background: `${c.orange}10` }}>
                 ⏳ Waiting for parties to submit evidence. Host has 20 minutes from dispute opening.
               </div>
             )}
 
-            {/* Resolution info */}
-            {isResolved && (
+            {(isResolved || localResolved.has(dispute.id)) && (
               <div style={{ fontSize: 12, padding: "8px 12px", borderRadius: 8, background: dispute.status === "resolved_host" ? `${c.green}10` : `${c.red}10`, color: dispute.status === "resolved_host" ? c.green : c.red }}>
                 {dispute.status === "resolved_host" ? "✅ Resolved in host's favor" : "❌ Resolved in watcher's favor"}
                 {" — "}{dispute.resolved_by === "ai" ? `AI (${dispute.ai_confidence}% confidence)` : dispute.resolved_by === "auto_timeout" ? "Auto-timeout (no host evidence)" : "Admin"}
@@ -280,7 +268,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               </div>
             )}
 
-            {/* Payment reference */}
             <div style={{ marginTop: 10, fontSize: 11, color: c.dim, fontFamily: "'DM Mono',monospace" }}>
               Payment: {dispute.payment_id} · Ref: {pay?.paystack_ref || "N/A"}
             </div>
@@ -294,7 +281,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
     <div style={{ minHeight: "calc(100vh - 60px)" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
 
-        {/* Escrow header */}
         <div className="glow" style={{ background: `linear-gradient(135deg,${c.card},#1a1a24)`, border: `1px solid ${c.gold}40`, borderRadius: 18, padding: 28, marginBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
           <div>
             <div style={{ color: c.sub, fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }}>Escrow Balance</div>
@@ -308,7 +294,7 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               ["Payout Ready", hostsWithPayout],
               ["No Payout",   hostsWithoutPayout],
               ["Refunds",     pendingRefunds.length],
-              ["Disputes",    openDisputes.length + escalatedDisputes.length],  // NEW
+              ["Disputes",    openDisputes.length + escalatedDisputes.length],
             ].map(([l, v]) => (
               <div key={l} style={{ background: c.surface, borderRadius: 10, padding: "12px 16px", minWidth: 90 }}>
                 <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 26, fontWeight: 600, color: l === "Refunds" && v > 0 ? c.orange : l === "Disputes" && v > 0 ? c.red : l === "No Payout" && v > 0 ? c.red : c.text }}>{v}</div>
@@ -318,7 +304,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
           </div>
         </div>
 
-        {/* Disputes alert */}
         {(openDisputes.length > 0 || escalatedDisputes.length > 0) && (
           <div style={{ background: `${c.red}15`, border: `1px solid ${c.red}40`, borderRadius: 12, padding: "12px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
@@ -332,7 +317,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
           </div>
         )}
 
-        {/* Pending payments alert */}
         {pendingPayments.length > 0 && (
           <div style={{ background: `${c.gold}15`, border: `1px solid ${c.gold}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div><strong style={{ color: c.goldL }}>{pendingPayments.length} payment(s)</strong> <span style={{ color: c.sub, fontSize: 13 }}>awaiting confirmation</span></div>
@@ -340,7 +324,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
           </div>
         )}
 
-        {/* Tabs */}
         <div style={{ display: "flex", gap: 2, marginBottom: 22, background: c.surface, padding: 4, borderRadius: 10, width: "fit-content", flexWrap: "wrap" }}>
           {["overview", "payments", "calls", "refunds", "disputes", "reports", "users"].map(t => (
             <button key={t} onClick={() => setTab(t)} style={{ padding: "8px 18px", borderRadius: 8, border: "none", cursor: "pointer", background: tab === t ? c.card : "transparent", color: tab === t ? c.goldL : c.sub, fontSize: 12, fontWeight: 600, position: "relative" }}>
@@ -380,7 +363,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               ))}
             </div>
 
-            {/* Top hosts */}
             <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, padding: 20, marginBottom: 16 }}>
               <div style={{ fontWeight: 600, marginBottom: 14, color: c.goldL }}>🏆 Top Hosts by Earnings</div>
               {(() => {
@@ -404,7 +386,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               })()}
             </div>
 
-            {/* Revenue chart */}
             <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, padding: 20 }}>
               <div style={{ fontWeight: 600, marginBottom: 14, color: c.goldL }}>📊 Revenue (Last 7 Days)</div>
               {(() => {
@@ -562,8 +543,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
           <div>
             <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, marginBottom: 18 }}>Refund Requests</div>
             {refundReqs.length === 0 && <div style={{ color: c.sub, textAlign: "center", padding: "40px 0" }}>No refund requests.</div>}
-
-            {/* Pending refunds — always visible */}
             {pendingRefunds.length > 0 && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -572,7 +551,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
                 </div>
               </div>
             )}
-
             {refundReqs.filter(r => r.status === "pending" || r.status === "pending_host").map(r => {
               const pay  = payments.find(p => p.id === r.payment_id);
               const host = users.find(u => u.id === pay?.target_user_id);
@@ -632,7 +610,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
                 </div>
               );
             })}
-          {/* Resolved / denied refunds — collapsed in folder */}
             {refundReqs.filter(r => r.status === "approved" || r.status === "denied" || r.status === "rejected").length > 0 && (() => {
               const resolved = refundReqs.filter(r => r.status === "approved" || r.status === "denied" || r.status === "rejected");
               return (
@@ -656,7 +633,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
                         const host = users.find(u => u.id === pay?.target_user_id);
                         const isDispute = r.refund_type === "dispute" || r.refund_type === "dispute_evidence";
                         const isApproved = r.status === "approved";
-                        const isDenied = r.status === "denied" || r.status === "rejected";
                         return (
                           <div key={r.id} style={{ background: c.surface, border: `1px solid ${isApproved ? `${c.green}30` : `${c.red}30`}`, borderRadius: 10, padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                             <div>
@@ -678,7 +654,7 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
           </div>
         )}
 
-        {/* ── NEW: Disputes ── */}
+        {/* ── Disputes ── */}
         {tab === "disputes" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
@@ -696,7 +672,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               </div>
             )}
 
-            {/* Active disputes first */}
             {[...openDisputes, ...escalatedDisputes, ...aiPendingDisputes].length > 0 && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -707,10 +682,10 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
               </div>
             )}
 
-            {/* Resolved disputes — collapsed folder */}
+            {/* FIXED: resolved disputes folder starts CLOSED (resolvedDisputesOpen defaults to false) */}
             {resolvedDisputes.length > 0 && (
               <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 14, overflow: "hidden" }}>
-                <div onClick={() => setShowPayHistory(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                <div onClick={() => setResolvedDisputesOpen(o => !o)} style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
                   onMouseEnter={e => e.currentTarget.style.background = c.surface}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -720,9 +695,9 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
                       <div style={{ color: c.sub, fontSize: 12 }}>{resolvedDisputes.length} dispute{resolvedDisputes.length !== 1 ? "s" : ""}</div>
                     </div>
                   </div>
-                  <span style={{ color: c.sub, fontSize: 18 }}>{showPayHistory ? "▲" : "▼"}</span>
+                  <span style={{ color: c.sub, fontSize: 18 }}>{resolvedDisputesOpen ? "▲" : "▼"}</span>
                 </div>
-                {showPayHistory && (
+                {resolvedDisputesOpen && (
                   <div style={{ padding: "0 12px 12px" }}>
                     {resolvedDisputes.map(d => renderDisputeCard(d))}
                   </div>
@@ -731,8 +706,6 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
             )}
           </div>
         )}
-
-        {/* ── Reports ── */}
 
         {/* ── Reports ── */}
         {tab === "reports" && (

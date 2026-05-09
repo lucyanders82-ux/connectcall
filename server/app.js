@@ -24,7 +24,6 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-// ─── IMPORTANT: read ADMIN_SECRET once so every route uses the same value ───
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
 function requireAdmin(req, res, next) {
@@ -40,13 +39,77 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  NIGERIA / OPAY HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Detect if a phone number is Nigerian
+function isNigerianNumber(number) {
+  const digits = (number || '').replace(/\D/g, '');
+  // +234... or 234... or 07x/08x/09x (10 digits)
+  if (digits.startsWith('234')) return true;
+  if (digits.length === 11 && ['070','071','080','081','090','091'].some(p => digits.startsWith(p))) return true;
+  return false;
+}
+
+// Normalise to international format
+function toNigeriaIntl(number) {
+  const digits = number.replace(/\D/g, '');
+  if (digits.startsWith('234')) return '+' + digits;
+  if (digits.startsWith('0') && digits.length === 11) return '+234' + digits.slice(1);
+  return '+' + digits;
+}
+
+// OPay payout — send money to a Nigerian mobile number via OPay API
+async function processOPayPayout(recipientNumber, amount, note) {
+  const OPAY_BASE = process.env.OPAY_BASE_URL || 'https://cashierapi.opayweb.com';
+  const merchantId = process.env.OPAY_MERCHANT_ID;
+  const publicKey  = process.env.OPAY_PUBLIC_KEY;
+  const privateKey = process.env.OPAY_PRIVATE_KEY;
+
+  if (!merchantId || !publicKey || !privateKey) {
+    throw new Error('OPay credentials not configured (OPAY_MERCHANT_ID, OPAY_PUBLIC_KEY, OPAY_PRIVATE_KEY)');
+  }
+
+  const reference = `CC-NG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const payload = {
+    amount: { total: Math.round(amount * 100), currency: 'NGN' },
+    country: 'NG',
+    receiver: { type: 'USER_PHONE', phoneNumber: toNigeriaIntl(recipientNumber) },
+    reference,
+    reason: note || 'ConnectCall payout',
+  };
+
+  // OPay uses HMAC-SHA512 signature on the JSON body with the private key
+  const bodyStr = JSON.stringify(payload);
+  const signature = crypto.createHmac('sha512', privateKey).update(bodyStr).digest('hex');
+
+  const res = await fetch(`${OPAY_BASE}/api/v3/transfer/toWallet`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${publicKey}`,
+      'MerchantId': merchantId,
+      'Signature': signature,
+    },
+    body: bodyStr,
+  });
+
+  const data = await res.json();
+  if (data.code !== '00000') {
+    throw new Error(`OPay transfer failed: ${data.message || JSON.stringify(data)}`);
+  }
+  console.log(`[OPay] Payout NGN ${amount} to ${recipientNumber} — ref ${reference}`);
+  return { reference, data };
+}
+
 // Webhook must use raw body parser BEFORE json parser
 app.use('/api/pay/webhook', webhookRoutes);
 
 // Regular body parsing
 app.use(express.json());
 
-// CORS — add your actual Vercel URL here
+// CORS
 app.use(cors({
   origin: (origin, callback) => {
     const allowed = [
@@ -81,15 +144,12 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (error || !user) return res.status(401).json({ error: 'Name or password incorrect' });
 
-    // Support both bcrypt hashes AND legacy plaintext (for users created before migration)
     let match = false;
     const storedPassword = user.password || '';
 
     if (storedPassword.startsWith('$2')) {
-      // bcrypt hash
       match = await bcrypt.compare(password, storedPassword);
     } else {
-      // Legacy plaintext comparison — auto-upgrade on success
       match = password === storedPassword;
       if (match) {
         const hashed = await bcrypt.hash(password, 12);
@@ -100,7 +160,6 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (!match) return res.status(401).json({ error: 'Name or password incorrect' });
 
-    // Never send sensitive fields to frontend
     const { password: _, payout_number, payout_name, paystack_recipient_code, ...safeUser } = user;
     return res.json({ success: true, user: safeUser });
 
@@ -204,7 +263,6 @@ app.post('/api/auth/confirm-reset', async (req, res) => {
     if (!matchedReset) return res.status(400).json({ error: 'Incorrect OTP' });
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-
     await supabase.from('users').update({ password: hashedPassword }).eq('id', user.id);
     await supabase.from('password_resets').update({ used: true }).eq('id', matchedReset.id);
 
@@ -251,13 +309,37 @@ app.post('/api/auth/signup', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  FEEDBACK
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { rating, text, ts } = req.body;
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating 1–5 required' });
+    }
+    await supabase.from('feedback').insert([{
+      rating,
+      text: text || null,
+      submitted_at: ts || new Date().toISOString(),
+    }]);
+    console.log(`[Feedback] Rating ${rating} received`);
+    return res.json({ success: true });
+  } catch (err) {
+    // Non-fatal — table may not exist yet, just log it
+    console.error('[Feedback] Error (non-fatal):', err.message);
+    return res.json({ success: true });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  PAYMENT ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.use('/api/pay', paymentRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  ADMIN ROUTES (all require requireAdmin middleware)
+//  ADMIN ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.post('/api/admin/login', rateLimitLogin, adminLogin);
@@ -276,9 +358,9 @@ app.post('/api/admin/approve-refund', requireAdmin, async (req, res) => {
     if (refund.status === 'approved') return res.status(400).json({ error: 'Already approved' });
 
     const pay = refund.payments;
+    const refundableAmount = refund.refund_amount
+      || parseFloat((parseFloat(pay.total_charged || pay.amount) * 0.85).toFixed(2));
 
-    const refundableAmount = refund.refund_amount 
-  || parseFloat((parseFloat(pay.total_charged || pay.amount) * 0.85).toFixed(2));
     const refundRes = await fetch('https://api.paystack.co/refund', {
       method: 'POST',
       headers: {
@@ -331,7 +413,6 @@ app.post('/api/admin/deny-refund', requireAdmin, async (req, res) => {
       .update({ status: 'denied', resolved_at: new Date().toISOString() })
       .eq('id', refundId);
 
-    // Trigger payout to host
     try {
       const { processPayout } = await import('./services/payout.service.js');
       await processPayout(pay.id, pay.call_id);
@@ -421,8 +502,6 @@ app.post('/api/admin/resolve-dispute', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'disputeId and verdict (host or watcher) required' });
     }
 
-    const { resolveDisputeOutcome } = await import('./routes/payment.routes.js');
-    // resolveDisputeOutcome is not exported — call it via the internal logic:
     const now = new Date().toISOString();
     await supabase.from('disputes').update({
       status: verdict === 'host' ? 'resolved_host' : 'resolved_watcher',
@@ -449,7 +528,7 @@ app.post('/api/admin/resolve-dispute', requireAdmin, async (req, res) => {
       await supabase.from('payments').update({ status: 'completed' }).eq('id', payment.id);
       await supabase.from('refund_requests').update({ status: 'rejected', resolved_at: now }).eq('dispute_id', disputeId);
       const { processPayout } = await import('./services/payout.service.js');
-await processPayout(payment.id, null).catch(e => console.error('[AdminResolve] Payout failed:', e.message));
+      await processPayout(payment.id, null).catch(e => console.error('[AdminResolve] Payout failed:', e.message));
     }
 
     await supabase.from('dispute_messages').insert([{
@@ -471,6 +550,7 @@ app.use('/api/admin', requireAdmin, adminRoutes);
 //  HOST ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Payout onboarding — supports Ghana (Paystack) and Nigeria (OPay) ─────────
 app.post('/api/host/onboard-payout', async (req, res) => {
   try {
     const { hostId, payoutName, payoutNumber, payoutProvider } = req.body;
@@ -481,6 +561,22 @@ app.post('/api/host/onboard-payout', async (req, res) => {
     const { data: host } = await supabase.from('users').select('id, name, role').eq('id', hostId).single();
     if (!host || host.role !== 'host') return res.status(404).json({ error: 'Host not found' });
 
+    // ── Nigeria / OPay path ──
+    if (payoutProvider === 'OPay' || isNigerianNumber(payoutNumber)) {
+      // For OPay we don't create a Paystack recipient — just store details
+      await supabase.from('users').update({
+        payout_name: payoutName,
+        payout_number: payoutNumber,
+        payout_provider: 'OPay',
+        // Use a placeholder so frontend shows payout as configured
+        paystack_recipient_code: `OPAY_${hostId}`,
+      }).eq('id', hostId);
+
+      console.log(`[Onboard] Nigerian host ${hostId} registered with OPay`);
+      return res.json({ success: true, recipientCode: `OPAY_${hostId}`, provider: 'OPay' });
+    }
+
+    // ── Ghana / Paystack path ──
     const recipientRes = await fetch('https://api.paystack.co/transferrecipient', {
       method: 'POST',
       headers: {
@@ -508,7 +604,7 @@ app.post('/api/host/onboard-payout', async (req, res) => {
       payout_provider: payoutProvider,
     }).eq('id', hostId);
 
-    return res.json({ success: true, recipientCode: data.data.recipient_code });
+    return res.json({ success: true, recipientCode: data.data.recipient_code, provider: 'Paystack' });
 
   } catch (err) {
     console.error('[Onboard] Error:', err);
@@ -568,7 +664,6 @@ app.post('/api/host/approve-refund', async (req, res) => {
 //  CALL ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// POST /api/call/initiate — host clicks the contact link
 app.post('/api/call/initiate', async (req, res) => {
   try {
     const { paymentId, hostId } = req.body;
@@ -578,7 +673,7 @@ app.post('/api/call/initiate', async (req, res) => {
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
     if (pay.target_user_id !== hostId) return res.status(403).json({ error: 'Unauthorized' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not confirmed' });
-        // Freeze after 10 minutes from contact reveal
+
     if (pay.contact_revealed_at) {
       const msSinceReveal = Date.now() - new Date(pay.contact_revealed_at).getTime();
       if (msSinceReveal > 10 * 60 * 1000) {
@@ -586,7 +681,7 @@ app.post('/api/call/initiate', async (req, res) => {
       }
     }
 
-        const { data: activeRefund } = await supabase
+    const { data: activeRefund } = await supabase
       .from('refund_requests')
       .select('id')
       .eq('payment_id', paymentId)
@@ -594,10 +689,8 @@ app.post('/api/call/initiate', async (req, res) => {
       .single();
     if (activeRefund) return res.status(400).json({ error: 'Cannot initiate — an active refund request exists' });
 
-    // Only record first click — if already initiated, just return the existing timestamp
     if (pay.call_initiated_at) {
       const msSinceInitiated = Date.now() - new Date(pay.call_initiated_at).getTime();
-      // Silently return — don't reset the timer or re-notify
       console.log(`[Initiate] Repeat click by host ${hostId} — ${Math.round(msSinceInitiated / 1000)}s since first click`);
       return res.json({ success: true, call_initiated_at: pay.call_initiated_at, repeated: true });
     }
@@ -606,7 +699,6 @@ app.post('/api/call/initiate', async (req, res) => {
       call_initiated_at: new Date().toISOString(),
     }).eq('id', paymentId);
 
-    // Notify watcher that host has initiated contact
     try {
       const { notifyWatcherCallInitiated } = await import('./services/notification.service.js');
       if (pay.watcher_contact) {
@@ -616,7 +708,6 @@ app.post('/api/call/initiate', async (req, res) => {
       console.error('[Initiate] Notify failed:', e.message);
     }
 
-    // Notify host of 30-min deadline
     try {
       const { notifyHostCallInitiated } = await import('./services/notification.service.js');
       const { data: host } = await supabase.from('users').select('contact_number').eq('id', hostId).single();
@@ -646,7 +737,6 @@ app.post('/api/call/reject', async (req, res) => {
     if (pay.target_user_id !== hostId) return res.status(403).json({ error: 'Unauthorized' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
 
-    // Check no active refund already
     const { data: existingRefund } = await supabase
       .from('refund_requests')
       .select('id')
@@ -657,9 +747,8 @@ app.post('/api/call/reject', async (req, res) => {
 
     const totalPaid = parseFloat(pay.total_charged || pay.amount);
     const REFUND_HOST_REJECTED = 90;
-const refundAmount = parseFloat((totalPaid * REFUND_HOST_REJECTED / 100).toFixed(2));
+    const refundAmount = parseFloat((totalPaid * REFUND_HOST_REJECTED / 100).toFixed(2));
 
-    // Paystack refund
     if (pay.paystack_ref) {
       try {
         await fetch('https://api.paystack.co/refund', {
@@ -686,12 +775,11 @@ const refundAmount = parseFloat((totalPaid * REFUND_HOST_REJECTED / 100).toFixed
       refund_percentage: REFUND_HOST_REJECTED,
     }]);
 
-    // Notify watcher
     try {
       const { notifyWatcherHostRejected } = await import('./services/notification.service.js');
-if (pay.watcher_contact) {
-  await notifyWatcherHostRejected(pay.watcher_contact);
-}
+      if (pay.watcher_contact) {
+        await notifyWatcherHostRejected(pay.watcher_contact);
+      }
     } catch (e) {
       console.error('[Reject] Notify failed:', e.message);
     }
@@ -713,14 +801,15 @@ app.post('/api/call/mark-done', async (req, res) => {
     const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
-        // Freeze after 10 minutes from contact reveal
+
     if (pay.contact_revealed_at) {
       const msSinceReveal = Date.now() - new Date(pay.contact_revealed_at).getTime();
       if (msSinceReveal > 10 * 60 * 1000) {
         return res.status(400).json({ error: 'Contact window expired — booking has been cancelled' });
       }
     }
-        const { data: activeRefund } = await supabase
+
+    const { data: activeRefund } = await supabase
       .from('refund_requests')
       .select('id')
       .eq('payment_id', paymentId)
@@ -728,17 +817,15 @@ app.post('/api/call/mark-done', async (req, res) => {
       .single();
     if (activeRefund) return res.status(400).json({ error: 'Cannot mark done — an active refund request exists' });
 
-    // Must have clicked the contact link first
     if (!pay.call_initiated_at) {
       return res.status(400).json({ error: 'You must initiate the call first by clicking the contact link' });
     }
 
-    // Must wait at least 2 minutes after initiating
     const msSinceInitiation = Date.now() - new Date(pay.call_initiated_at).getTime();
     const MIN_CALL_MS = 2 * 60 * 1000;
     if (msSinceInitiation < MIN_CALL_MS) {
       const secondsLeft = Math.ceil((MIN_CALL_MS - msSinceInitiation) / 1000);
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: `Please wait ${secondsLeft} more seconds before marking the call as done`,
         secondsLeft,
       });
@@ -754,7 +841,6 @@ app.post('/api/call/mark-done', async (req, res) => {
       released: false,
     }]).select().single();
 
-        // Watcher has 10 minutes to confirm before auto-payout
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     const { data: confirmation } = await supabase.from('call_confirmations').insert([{
@@ -764,7 +850,6 @@ app.post('/api/call/mark-done', async (req, res) => {
       expires_at: expiresAt,
     }]).select().single();
 
-    // SMS poll to watcher
     try {
       const { notifyWatcherCallMarkedDone } = await import('./services/notification.service.js');
       const { data: host } = await supabase.from('users').select('name').eq('id', pay.target_user_id).single();
@@ -825,7 +910,6 @@ app.post('/api/call/respond', async (req, res) => {
         responded_at: new Date().toISOString(),
       }).eq('id', confirmationId);
 
-      // Create refund request
       const { data: refundReq } = await supabase.from('refund_requests').insert([{
         payment_id: pay.id,
         reason: 'Watcher disputed call completion',
@@ -836,7 +920,6 @@ app.post('/api/call/respond', async (req, res) => {
         auto_refunded: false,
       }]).select().single();
 
-      // Open dispute record
       const { data: dispute } = await supabase.from('disputes').insert([{
         payment_id: pay.id,
         refund_request_id: refundReq?.id,
@@ -846,14 +929,12 @@ app.post('/api/call/respond', async (req, res) => {
         host_evidence_deadline: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
       }]).select().single();
 
-      // Link dispute back to refund request
       if (refundReq?.id && dispute?.id) {
         await supabase.from('refund_requests')
           .update({ dispute_id: dispute.id })
           .eq('id', refundReq.id);
       }
 
-      // System message
       await supabase.from('dispute_messages').insert([{
         dispute_id: dispute.id,
         sender_role: 'system',
@@ -862,7 +943,6 @@ app.post('/api/call/respond', async (req, res) => {
 
       await supabase.from('payments').update({ status: 'disputed' }).eq('id', pay.id);
 
-      // Notify host
       try {
         const { data: host } = await supabase.from('users').select('contact_number').eq('id', pay.target_user_id).single();
         if (host?.contact_number) {
@@ -960,31 +1040,19 @@ app.post('/api/rate', async (req, res) => {
 app.get('/api/response-rate/:hostId', async (req, res) => {
   try {
     const { hostId } = req.params;
-
     const { data: allPayments } = await supabase
-      .from('payments')
-      .select('id')
-      .eq('target_user_id', hostId)
-      .eq('paystack_verified', true);
-
+      .from('payments').select('id').eq('target_user_id', hostId).eq('paystack_verified', true);
     if (!allPayments || allPayments.length === 0) {
       return res.json({ rate: null, responded: 0, total: 0 });
     }
-
     const paymentIds = allPayments.map(p => p.id);
-
     const { data: responded } = await supabase
-      .from('call_confirmations')
-      .select('id')
-      .in('payment_id', paymentIds)
-      .in('status', ['confirmed', 'auto_confirmed']);
-
+      .from('call_confirmations').select('id')
+      .in('payment_id', paymentIds).in('status', ['confirmed', 'auto_confirmed']);
     const total = allPayments.length;
     const respondedCount = responded?.length || 0;
     const rate = Math.round((respondedCount / total) * 100);
-
     return res.json({ rate, responded: respondedCount, total });
-
   } catch (err) {
     console.error('[ResponseRate] Error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -1002,27 +1070,19 @@ app.get('/api/rating/:hostId', async (req, res) => {
 app.get('/api/admin/withdrawable-balance', requireAdmin, async (req, res) => {
   try {
     const { data: payments } = await supabase
-      .from('payments')
-      .select('platform_fee')
-      .eq('paystack_verified', true)
+      .from('payments').select('platform_fee').eq('paystack_verified', true)
       .not('status', 'in', '("refunded","refunded_partial","failed","pending_init")');
-
     const { data: withdrawals } = await supabase
-      .from('admin_withdrawals')
-      .select('amount')
-      .in('status', ['success', 'pending', 'otp']);
-
+      .from('admin_withdrawals').select('amount').in('status', ['success', 'pending', 'otp']);
     const totalFees = (payments || []).reduce((a, p) => a + Number(p.platform_fee || 0), 0);
     const totalWithdrawn = (withdrawals || []).reduce((a, w) => a + Number(w.amount || 0), 0);
     const withdrawable = Math.max(0, totalFees - totalWithdrawn);
-
-    return res.json({ 
-      success: true, 
+    return res.json({
+      success: true,
       withdrawable: parseFloat(withdrawable.toFixed(2)),
       totalFees: parseFloat(totalFees.toFixed(2)),
       totalWithdrawn: parseFloat(totalWithdrawn.toFixed(2)),
     });
-
   } catch (err) {
     console.error('[WithdrawableBalance] Error:', err);
     res.status(500).json({ error: 'Server error' });
@@ -1108,7 +1168,6 @@ app.listen(PORT, () => {
 //  CRON JOBS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Run every 2 minutes — expire stale windows & auto-resolve disputes
 cron.schedule('*/2 * * * *', async () => {
   try {
     const res = await fetch(`http://localhost:${PORT}/api/pay/call/check-expired`);
@@ -1121,7 +1180,6 @@ cron.schedule('*/2 * * * *', async () => {
   }
 });
 
-// Run every 30 minutes — auto-confirm calls where watcher didn't respond in 24h
 cron.schedule('*/30 * * * *', async () => {
   try {
     const res = await fetch(`http://localhost:${PORT}/api/call/check-expired`, {
@@ -1137,16 +1195,8 @@ cron.schedule('*/30 * * * *', async () => {
   }
 });
 
-export async function notifyWatcherHostRejected(watcherContact) {
-  try {
-    const to = formatGhanaNumber(watcherContact);
-    await sms.send({
-      to: [to],
-      message: `ConnectCall: The host was unable to take your call and has rejected the request. You will receive a 90% refund shortly. We apologise for the inconvenience.`,
-      from: process.env.AT_SENDER_ID || undefined,
-    });
-    console.log(`[SMS] Watcher host rejected notified — ${to}`);
-  } catch (err) {
-    console.error('[SMS] Watcher host rejected notification failed:', err.message);
-  }
-}
+// ─────────────────────────────────────────────────────────────────────────────
+//  EXPORTS (used internally by other service files)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export { isNigerianNumber, toNigeriaIntl, processOPayPayout };

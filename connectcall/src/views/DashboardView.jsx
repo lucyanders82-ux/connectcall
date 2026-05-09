@@ -11,10 +11,10 @@ export function DashboardView({
   user, users, payments, calls, verifyPrompts, onMarkDone, onUpdate,
   onAnswerVerify, toast, setView, refundReqs, onHostApproveRefund,
   callConfirmations,
-  disputes = [],              // NEW
-  followupReqs = [],          // NEW
-  onSubmitEvidence,           // NEW
-  onRequestFollowup,          // NEW
+  disputes = [],
+  followupReqs = [],
+  onSubmitEvidence,
+  onRequestFollowup,
 }) {
   if (user?.role === "watcher") { setView("browse"); return null; }
 
@@ -28,6 +28,9 @@ export function DashboardView({
   const [markDoneCountdown, setMarkDoneCountdown] = useState({});
   const [now, setNow] = useState(Date.now());
   const [tipOpen, setTipOpen] = useState(false);
+  // Track which payments have had call initiated (for immediate UI update)
+  const [initiatedPayments, setInitiatedPayments] = useState({});
+
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(t);
@@ -39,22 +42,29 @@ export function DashboardView({
   const myCalls = calls.filter(cl => cl.target_user_id === user.id || cl.targetUserId === user.id);
   const myVP    = verifyPrompts.filter(v => !v.answered && myPay.some(p => p.id === v.payment_id || p.id === v.paymentId));
   const hostRefundReqs = refundReqs.filter(r => r.status === "pending_host" && myPay.some(p => p.id === r.payment_id));
+
+  // FIXED: missed requests — exclude refunded ones (where refund is approved)
   const missedReqs = myPay.filter(p => {
     if (p.status !== "refunded_partial" && p.status !== "cancelled") return false;
-    // Exclude if refund was due to dispute
     const refund = refundReqs.find(r => r.payment_id === p.id);
+    // Hide if refund was due to dispute
     if (refund?.refund_type === "dispute_evidence" || refund?.refund_type === "auto_dispute") return false;
-    // Exclude if host rejected — that's final, no retry
+    // Hide if host rejected — that's final
     if (refund?.refund_type === "host_rejected") return false;
-    // Exclude if followup already accepted
+    // Hide if refund has been approved (money returned, no action needed)
+    if (refund?.status === "approved") return false;
+    // Hide if followup already accepted
     const followup = followupReqs.find(f => f.payment_id === p.id);
     if (followup?.status === "accepted") return false;
     return true;
   });
 
   const liveReqs = myPay.filter(p => {
+    // FIXED: cancelled/refunded_partial always go to history, never stay in live
+    if (p.status === "cancelled" || p.status === "refunded_partial") return false;
+    if (p.status === "refunded") return false;
+
     if (p.status === "disputed") {
-      // Only show in live if dispute is still unresolved
       const dispute = disputes.find(d => d.payment_id === p.id);
       if (dispute?.status === "resolved_host" || dispute?.status === "resolved_watcher") return false;
       return true;
@@ -85,13 +95,13 @@ export function DashboardView({
   // ── Dispute Banner for Host ────────────────────────────────────────────────
   const DisputeBanner = ({ dispute, payment }) => {
     const statusLabels = {
-  open:              { icon: "⚠️", text: "Watcher disputes your call — upload evidence now", color: c.orange },
-  watcher_evidence:  { icon: "📤", text: "Evidence submitted — waiting for watcher response", color: c.gold },
-  ai_verdict_pending:{ icon: "🧠", text: "AI is analysing both screenshots…", color: c.blue },
-  resolved_host:     { icon: "🏆", text: "Resolved in your favor — payment released", color: c.green },
-  resolved_watcher:  { icon: "💸", text: "Resolved in watcher's favor — refund processed", color: c.red },
-  escalated_admin:   { icon: "🔍", text: "Escalated to admin — decision within 24hrs", color: c.orange },
-};
+      open:              { icon: "⚠️", text: "Watcher disputes your call — upload evidence now", color: c.orange },
+      watcher_evidence:  { icon: "📤", text: "Evidence submitted — waiting for watcher response", color: c.gold },
+      ai_verdict_pending:{ icon: "🧠", text: "AI is analysing both screenshots…", color: c.blue },
+      resolved_host:     { icon: "🏆", text: "Resolved in your favor — payment released", color: c.green },
+      resolved_watcher:  { icon: "💸", text: "Resolved in watcher's favor — refund processed", color: c.red },
+      escalated_admin:   { icon: "🔍", text: "Escalated to admin — decision within 24hrs", color: c.orange },
+    };
     const s = statusLabels[dispute?.status] || statusLabels.open;
 
     return (
@@ -108,8 +118,7 @@ export function DashboardView({
             {dispute.ai_analysis}
           </div>
         )}
-        {/* Show upload button if host needs to submit evidence */}
-        {dispute?.status === "open" && !dispute?.host_evidence_url && 
+        {dispute?.status === "open" && !dispute?.host_evidence_url &&
          !["resolved_host","resolved_watcher","escalated_admin"].includes(dispute?.status) && (
           <div>
             <div style={{ fontSize: 12, color: c.sub, marginBottom: 8 }}>
@@ -118,7 +127,6 @@ export function DashboardView({
             <HostEvidenceUpload disputeId={dispute.id} />
           </div>
         )}
-        {/* Show verdict info */}
         {(dispute?.status === "resolved_host" || dispute?.status === "resolved_watcher") && (
           <div style={{ fontSize: 12, color: c.sub }}>
             Resolved {dispute.resolved_by === "ai" ? "automatically by AI" : "by admin"} —{" "}
@@ -130,7 +138,6 @@ export function DashboardView({
   };
 
   // ── Host Evidence Upload ───────────────────────────────────────────────────
-    // ── Host Evidence Upload (real file picker + Supabase Storage) ────────────
   const HostEvidenceUpload = ({ disputeId }) => {
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
@@ -139,33 +146,20 @@ export function DashboardView({
     const handleFilePick = async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
-      if (!file.type.startsWith('image/')) {
-        toast('Please upload an image file', 'error');
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        toast('File too large — max 10MB', 'error');
-        return;
-      }
-
-      setUploading(true);
-      setUploadProgress(0);
-
+      if (!file.type.startsWith('image/')) { toast('Please upload an image file', 'error'); return; }
+      if (file.size > 10 * 1024 * 1024) { toast('File too large — max 10MB', 'error'); return; }
+      setUploading(true); setUploadProgress(0);
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => prev < 85 ? prev + 12 : prev);
       }, 200);
-
       try {
         const { apiUploadEvidence } = await import('../api.js');
         const url = await apiUploadEvidence(file, user?.id);
-        clearInterval(progressInterval);
-        setUploadProgress(100);
+        clearInterval(progressInterval); setUploadProgress(100);
         await onSubmitEvidence(disputeId, user?.id, 'host', url);
         toast('Evidence submitted — watcher will be notified', 'success');
       } catch (e) {
-        clearInterval(progressInterval);
-        setUploadProgress(0);
+        clearInterval(progressInterval); setUploadProgress(0);
         toast('Failed to upload: ' + (e.message || 'Unknown error'), 'error');
       }
       setUploading(false);
@@ -173,26 +167,14 @@ export function DashboardView({
 
     return (
       <>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={handleFilePick}
-        />
-        <Btn
-          small
-          variant="blue"
-          disabled={uploading}
-          onClick={() => fileInputRef.current?.click()}
-        >
+        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFilePick} />
+        <Btn small variant="blue" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
           {uploading ? 'Uploading…' : '📎 Upload Call Log Screenshot'}
         </Btn>
         {uploading && (
           <div style={{ marginTop: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: c.sub, marginBottom: 4 }}>
-              <span>Uploading screenshot…</span>
-              <span>{uploadProgress}%</span>
+              <span>Uploading screenshot…</span><span>{uploadProgress}%</span>
             </div>
             <div style={{ height: 4, borderRadius: 4, background: c.surface, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${uploadProgress}%`, background: `linear-gradient(90deg, ${c.blue}, #60a5fa)`, borderRadius: 4, transition: 'width 0.2s ease' }} />
@@ -205,8 +187,6 @@ export function DashboardView({
 
   // ── Follow-up Banner for Host ──────────────────────────────────────────────
   const FollowupBanner = ({ followup }) => {
-    const [reqBusy, setReqBusy] = useState(false);
-
     if (followup?.status === "expired") {
       return (
         <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.sub}15`, fontSize: 12, color: c.sub, marginTop: 8 }}>
@@ -228,7 +208,6 @@ export function DashboardView({
         </div>
       );
     }
-    // pending
     return (
       <div style={{ padding: "10px 14px", borderRadius: 8, background: `${c.blue}10`, fontSize: 12, color: c.blue, marginTop: 8 }}>
         ⏳ Follow-up request sent — waiting for watcher to respond…
@@ -265,11 +244,15 @@ export function DashboardView({
         {/* Tabs */}
         <div style={{ display: "flex", gap: 2, marginBottom: 24, background: c.surface, padding: 4, borderRadius: 10, width: "fit-content", flexWrap: "wrap" }}>
           {["overview", "requests", "missed", "manage profile"].map(t => {
-            const missedReqs = myPay.filter(p =>
-  (p.status === "refunded_partial" || p.status === "cancelled") &&
-  !followupReqs.find(f => f.payment_id === p.id && f.status === "accepted")
-);
-const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.length : 0;
+            const missedCount = myPay.filter(p => {
+              if (p.status !== "refunded_partial" && p.status !== "cancelled") return false;
+              const refund = refundReqs.find(r => r.payment_id === p.id);
+              if (refund?.status === "approved") return false;
+              if (refund?.refund_type === "dispute_evidence" || refund?.refund_type === "auto_dispute") return false;
+              if (refund?.refund_type === "host_rejected") return false;
+              return !followupReqs.find(f => f.payment_id === p.id && f.status === "accepted");
+            }).length;
+            const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedCount : 0;
             return (
               <button key={t} onClick={() => setTab(t)} style={{ padding: "8px 18px", borderRadius: 8, border: "none", cursor: "pointer", background: tab === t ? c.card : "transparent", color: tab === t ? c.goldL : c.sub, fontSize: 12, fontWeight: 600, fontFamily: "'Plus Jakarta Sans',sans-serif", textTransform: "capitalize", position: "relative" }}>
                 {t}
@@ -299,20 +282,10 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
             </div>
 
             <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
-                background: live.paystackRecipientCode ? `${c.green}20` : `${c.orange}20`,
-                color: live.paystackRecipientCode ? c.green : c.orange,
-                border: `1px solid ${live.paystackRecipientCode ? c.green : c.orange}40`,
-              }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: live.paystackRecipientCode ? `${c.green}20` : `${c.orange}20`, color: live.paystackRecipientCode ? c.green : c.orange, border: `1px solid ${live.paystackRecipientCode ? c.green : c.orange}40` }}>
                 {live.paystackRecipientCode ? "✅ Payout Active" : "⚠️ Payout Incomplete"}
               </span>
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
-                background: `${c.green}20`, color: c.green, border: `1px solid ${c.green}40`,
-              }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: `${c.green}20`, color: c.green, border: `1px solid ${c.green}40` }}>
                 💰 Wallet: {S}{Number(live.wallet || 0).toFixed(2)}
               </span>
             </div>
@@ -367,18 +340,17 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                         const callDone = calls.find(cl => cl.payment_id === pay.id || cl.paymentId === pay.id);
                         const refund   = refundReqs.find(r => r.payment_id === pay.id);
                         const conf     = (callConfirmations || []).find(cc => cc.payment_id === pay.id);
-                        const dispute  = disputes.find(d => d.payment_id === pay.id);       // NEW
-                        const followup = followupReqs.find(f => f.payment_id === pay.id);    // NEW
+                        const dispute  = disputes.find(d => d.payment_id === pay.id);
+                        const followup = followupReqs.find(f => f.payment_id === pay.id);
                         const isDisputed = pay.status === "disputed" || !!dispute;
                         const isCancelled = pay.status === "cancelled" || pay.status === "refunded_partial";
 
+                        // FIXED: check both DB field and local state for call_initiated_at
+                        const hasInitiated = !!pay.call_initiated_at || !!initiatedPayments[pay.id];
+
                         const borderCol = isDisputed ? c.orange : isCancelled ? c.red : pay.status === "confirmed" ? c.gold : c.border;
                         return (
-                          <div key={pay.id} style={{
-                            borderRadius: 12, marginBottom: 10, overflow: "hidden",
-                            background: `linear-gradient(135deg,${c.card},#1a1a24)`,
-                            border: `1px solid ${borderCol}`,
-                          }}>
+                          <div key={pay.id} style={{ borderRadius: 12, marginBottom: 10, overflow: "hidden", background: `linear-gradient(135deg,${c.card},#1a1a24)`, border: `1px solid ${borderCol}` }}>
                             {/* Card header strip */}
                             <div style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${c.border}20` }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -399,51 +371,29 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                             {/* ── FOLLOW-UP BANNER ── */}
                             {followup && <FollowupBanner followup={followup} />}
 
-                            {/* ── CANCELLED: Show follow-up request button ── */}
-                            {isCancelled && !followup && !dispute && (
-                              <div style={{ padding: "12px 14px", borderRadius: 10, background: `${c.blue}15`, border: `1px solid ${c.blue}40`, marginTop: 8 }}>
-                                <div style={{ fontWeight: 600, fontSize: 13, color: c.blue, marginBottom: 6 }}>
-                                  🔄 Missed the call window?
-                                </div>
-                                <div style={{ fontSize: 12, color: c.sub, marginBottom: 10 }}>
-                                  Request a follow-up — the watcher can choose to retry the call with you.
-                                </div>
-                                <Btn
-                                  small variant="blue"
-                                  disabled={requestingFollowup[pay.id]}
-                                  onClick={async () => {
-                                    setRequestingFollowup(prev => ({ ...prev, [pay.id]: true }));
-                                    await onRequestFollowup(pay.id);
-                                    setRequestingFollowup(prev => ({ ...prev, [pay.id]: false }));
-                                  }}
-                                >
-                                  {requestingFollowup[pay.id] ? "Requesting…" : "🔄 Request Follow-up Call"}
-                                </Btn>
-                              </div>
-                            )}
-
                             {pay.status === "pending" && !isDisputed && (
                               <div style={{ padding: "8px 12px", borderRadius: 8, background: c.surface, fontSize: 12, color: c.sub, display: "flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.orange, display: "inline-block", animation: "pulse 2s infinite" }} />
                                 Awaiting admin confirmation — contacts hidden
                               </div>
                             )}
-                                                        {pay.status === "confirmed" && !isDisputed && !refund && (() => {
+
+                            {pay.status === "confirmed" && !isDisputed && !refund && (() => {
                               const number  = pay.watcher_contact || "";
                               const platform = pay.watcher_platform || "WhatsApp";
                               const digits  = number.replace(/\D/g, "");
                               const intl    = digits.startsWith("0") ? "233" + digits.slice(1) : digits;
                               const link    = platform === "Telegram" ? `https://t.me/+${intl}` : `https://wa.me/${intl}`;
-                              const hasInitiated = !!pay.call_initiated_at;
                               return (
                                 <div style={{ padding: "10px", borderRadius: 8, background: `${c.green}10`, border: `1px solid ${c.green}30` }}>
                                   <div style={{ fontSize: 12, fontWeight: 600, color: c.green, marginBottom: 4 }}>✓ Confirmed — Contacts Revealed</div>
                                   <a href={link} target="_blank" rel="noopener noreferrer"
                                     onClick={async () => {
                                       if (!hasInitiated) {
+                                        // FIXED: immediately mark as initiated in local state so reject button hides right away
+                                        setInitiatedPayments(prev => ({ ...prev, [pay.id]: true }));
                                         const { apiInitiateCall } = await import('../api.js');
                                         await apiInitiateCall(pay.id, live.id);
-                                        // Refresh payment so call_initiated_at is set
                                         const { data: pRows } = await supabase.from("payments").select("*").order("created_at", { ascending: false });
                                       }
                                     }}
@@ -457,14 +407,14 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                                     </div>
                                   </a>
                                   {hasInitiated && (() => {
-                                    const initiatedAt = new Date(pay.call_initiated_at).getTime();
+                                    const initiatedAt = new Date(pay.call_initiated_at || initiatedPayments[pay.id]).getTime();
                                     const deadlineMs = initiatedAt + 30 * 60 * 1000;
                                     const minsLeft = Math.max(0, Math.round((deadlineMs - now) / 60000));
                                     const isUrgent = minsLeft <= 10;
                                     return (
                                       <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: isUrgent ? `${c.red}15` : `${c.green}10`, border: `1px solid ${isUrgent ? c.red : c.green}30` }}>
                                         <div style={{ fontSize: 12, color: isUrgent ? c.red : c.green, fontWeight: 600 }}>
-                                          {isUrgent ? "⚠️" : "✓"} Call initiated at {new Date(pay.call_initiated_at).toLocaleTimeString()}
+                                          {isUrgent ? "⚠️" : "✓"} Call initiated
                                         </div>
                                         <div style={{ fontSize: 11, color: c.sub, marginTop: 3 }}>
                                           {minsLeft > 0
@@ -477,65 +427,67 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                                 </div>
                               );
                             })()}
+
                             {conf && conf.status === "pending" && !isDisputed && (
                               <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: `${c.gold}10`, border: `1px solid ${c.gold}30`, fontSize: 12, color: c.goldL, display: "flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.gold, display: "inline-block", animation: "pulse 2s infinite" }} />
                                 Awaiting watcher confirmation — payout pending
                               </div>
                             )}
-                                                        {pay.status === "confirmed" && !callDone && !conf && !isDisputed && !refund && (
-  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-    <div style={{ flex: 1 }}>
-                      <MarkDoneBtn
-                        payId={pay.id}
-                        live={live}
-                        onMarkDone={async (...args) => {
-                          const result = await onMarkDone(...args);
-                          // If server returns secondsLeft, start a countdown in UI
-                          if (result?.secondsLeft) {
-                            let secs = result.secondsLeft;
-                            setMarkDoneCountdown(prev => ({ ...prev, [pay.id]: secs }));
-                            const t = setInterval(() => {
-                              secs -= 1;
-                              if (secs <= 0) {
-                                clearInterval(t);
-                                setMarkDoneCountdown(prev => { const n = { ...prev }; delete n[pay.id]; return n; });
-                              } else {
-                                setMarkDoneCountdown(prev => ({ ...prev, [pay.id]: secs }));
-                              }
-                            }, 1000);
-                          }
-                          return result;
-                        }}
-                      />
-                      {markDoneCountdown[pay.id] > 0 && (
-                        <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: `${c.orange}15`, border: `1px solid ${c.orange}30` }}>
-                          <div style={{ fontSize: 12, color: c.orange, fontWeight: 600 }}>
-                            ⏱ Wait {markDoneCountdown[pay.id]}s — call must be at least 2 minutes
-                          </div>
-                          <div style={{ height: 3, borderRadius: 3, background: c.surface, marginTop: 6, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${(markDoneCountdown[pay.id] / 120) * 100}%`, background: c.orange, borderRadius: 3, transition: 'width 1s linear' }} />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-    {!pay.call_initiated_at && (
-      <Btn
-        small variant="red"
-        onClick={async () => {
-          if (!window.confirm("Reject this request? The watcher will receive a 90% refund immediately.")) return;
-          const { apiRejectRequest } = await import('../api.js');
-          const result = await apiRejectRequest(pay.id, live.id);
-          if (result.error) toast(result.error, "error");
-          else toast(result.message, "success");
-        }}
-      >
-        ✕ Reject
-      </Btn>
-    )}
-  </div>
-)}
-                          </div>
+
+                            {pay.status === "confirmed" && !callDone && !conf && !isDisputed && !refund && (
+                              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                                <div style={{ flex: 1 }}>
+                                  <MarkDoneBtn
+                                    payId={pay.id}
+                                    live={live}
+                                    onMarkDone={async (...args) => {
+                                      const result = await onMarkDone(...args);
+                                      if (result?.secondsLeft) {
+                                        let secs = result.secondsLeft;
+                                        setMarkDoneCountdown(prev => ({ ...prev, [pay.id]: secs }));
+                                        const t = setInterval(() => {
+                                          secs -= 1;
+                                          if (secs <= 0) {
+                                            clearInterval(t);
+                                            setMarkDoneCountdown(prev => { const n = { ...prev }; delete n[pay.id]; return n; });
+                                          } else {
+                                            setMarkDoneCountdown(prev => ({ ...prev, [pay.id]: secs }));
+                                          }
+                                        }, 1000);
+                                      }
+                                      return result;
+                                    }}
+                                  />
+                                  {markDoneCountdown[pay.id] > 0 && (
+                                    <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: `${c.orange}15`, border: `1px solid ${c.orange}30` }}>
+                                      <div style={{ fontSize: 12, color: c.orange, fontWeight: 600 }}>
+                                        ⏱ Wait {markDoneCountdown[pay.id]}s — call must be at least 2 minutes
+                                      </div>
+                                      <div style={{ height: 3, borderRadius: 3, background: c.surface, marginTop: 6, overflow: 'hidden' }}>
+                                        <div style={{ height: '100%', width: `${(markDoneCountdown[pay.id] / 120) * 100}%`, background: c.orange, borderRadius: 3, transition: 'width 1s linear' }} />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                {/* FIXED: reject button hidden as soon as call is initiated (local state OR DB) */}
+                                {!hasInitiated && (
+                                  <Btn
+                                    small variant="red"
+                                    onClick={async () => {
+                                      if (!window.confirm("Reject this request? The watcher will receive a 90% refund immediately.")) return;
+                                      const { apiRejectRequest } = await import('../api.js');
+                                      const result = await apiRejectRequest(pay.id, live.id);
+                                      if (result.error) toast(result.error, "error");
+                                      else toast(result.message, "success");
+                                    }}
+                                  >
+                                    ✕ Reject
+                                  </Btn>
+                                )}
+                              </div>
+                            )}
+                            </div>
                           </div>
                         );
                       })}
@@ -563,10 +515,8 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                       {hostHistoryOpen && (
                         <div style={{ padding: "0 12px 12px" }}>
                           {closedReqs.map(pay => {
-                            const callDone = calls.find(cl => cl.payment_id === pay.id);
                             const conf = (callConfirmations || []).find(cc => cc.payment_id === pay.id);
                             const dispute = disputes.find(d => d.payment_id === pay.id);
-                            return (() => {
                             const histStatus = pay.status === "completed" || conf?.status === "confirmed" || conf?.status === "auto_confirmed" || dispute?.status === "resolved_host"
                               ? { label: "✅ Done", color: c.green }
                               : pay.status === "refunded" ? { label: "↩ Refunded", color: c.red }
@@ -577,7 +527,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                               <div key={pay.id} style={{ padding: "12px 14px", borderRadius: 10, marginBottom: 8, background: c.surface, border: `1px solid ${c.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                                 <div>
                                   <div style={{ fontWeight: 600, fontSize: 13 }}>{pay.watcher_name}</div>
-                                  <div style={{ fontSize: 10, color: c.sub, marginTop: 2 }}>{new Date(pay.created_at || pay.ts).toLocaleDateString()}{conf?.status === "auto_confirmed" ? " · 🤖 Auto-confirmed" : ""}{dispute?.resolved_by === "ai" ? ` · 🧠 AI verdict (${dispute.ai_confidence}%)` : dispute?.resolved_by === "admin" ? " · Admin decision" : ""}</div>
+                                  <div style={{ fontSize: 10, color: c.sub, marginTop: 2 }}>{new Date(pay.created_at || pay.ts).toLocaleDateString()}{conf?.status === "auto_confirmed" ? " · 🤖 Auto-confirmed" : ""}{dispute?.resolved_by === "ai" ? ` · 🧠 AI verdict` : dispute?.resolved_by === "admin" ? " · Admin decision" : ""}</div>
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                   <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 17, color: c.goldL }}>{S}{pay.total_charged || pay.amount}</span>
@@ -585,7 +535,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                                 </div>
                               </div>
                             );
-                            })();})}
+                          })}
                         </div>
                       )}
                     </div>
@@ -594,8 +544,6 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
             }
           </div>
         )}
-
-        {/* ── Manage Profile ── */}
 
         {/* ── Missed Requests ── */}
         {tab === "missed" && (
@@ -615,12 +563,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                   const followup = followupReqs.find(f => f.payment_id === pay.id);
                   const refund = refundReqs.find(r => r.payment_id === pay.id);
                   return (
-                    <div key={pay.id} style={{
-                      padding: 18, borderRadius: 14,
-                      background: `linear-gradient(135deg,${c.card},#1a1a24)`,
-                      border: `1px solid ${c.red}40`,
-                    }}>
-                      {/* Header */}
+                    <div key={pay.id} style={{ padding: 18, borderRadius: 14, background: `linear-gradient(135deg,${c.card},#1a1a24)`, border: `1px solid ${c.red}40` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 15 }}>{pay.watcher_name}</div>
@@ -632,7 +575,6 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                         </div>
                       </div>
 
-                      {/* Status timeline */}
                       <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
                         {[
                           { label: "Booked", done: true },
@@ -641,13 +583,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                           { label: "Resolved", done: false },
                         ].map((step, i) => (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                            <div style={{
-                              width: 20, height: 20, borderRadius: "50%",
-                              background: step.done ? c.green : c.surface,
-                              border: `2px solid ${step.done ? c.green : c.border}`,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 10, color: step.done ? "#fff" : c.dim,
-                            }}>
+                            <div style={{ width: 20, height: 20, borderRadius: "50%", background: step.done ? c.green : c.surface, border: `2px solid ${step.done ? c.green : c.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: step.done ? "#fff" : c.dim }}>
                               {step.done ? "✓" : "○"}
                             </div>
                             <span style={{ fontSize: 10, color: step.done ? c.green : c.dim }}>{step.label}</span>
@@ -656,20 +592,16 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                         ))}
                       </div>
 
-                      {/* Follow-up status or button */}
                       {!followup && (
                         <div style={{ background: `${c.blue}10`, border: `1px solid ${c.blue}30`, borderRadius: 10, padding: "12px 14px" }}>
                           <div style={{ fontSize: 13, color: c.blue, fontWeight: 600, marginBottom: 4 }}>🔄 Want to retry this call?</div>
                           <div style={{ fontSize: 12, color: c.sub, marginBottom: 10 }}>Send a follow-up request — the watcher has 10 minutes to accept and their contact will be revealed again.</div>
-                          <Btn
-                            small variant="blue"
-                            disabled={requestingFollowup[pay.id]}
+                          <Btn small variant="blue" disabled={requestingFollowup[pay.id]}
                             onClick={async () => {
                               setRequestingFollowup(prev => ({ ...prev, [pay.id]: true }));
                               await onRequestFollowup(pay.id);
                               setRequestingFollowup(prev => ({ ...prev, [pay.id]: false }));
-                            }}
-                          >
+                            }}>
                             {requestingFollowup[pay.id] ? "Sending…" : "🔄 Request Follow-up Call"}
                           </Btn>
                         </div>
