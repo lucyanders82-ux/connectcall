@@ -770,10 +770,10 @@ function getImageMediaType(url) {
 // ── Placeholder AI analysis — replace with actual Claude/GPT Vision call ──
 // ── Real Claude Vision AI analysis ──
 async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-  if (!GEMINI_API_KEY) {
-    console.warn('[AI] No GEMINI_API_KEY set — falling back to placeholder');
+  if (!OPENROUTER_API_KEY) {
+    console.warn('[AI] No OPENROUTER_API_KEY set — falling back to placeholder');
     return {
       verdict: 'inconclusive',
       confidence: 50,
@@ -787,24 +787,29 @@ async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
     const hostMediaType = getImageMediaType(hostEvidenceUrl);
     const watcherMediaType = getImageMediaType(watcherEvidenceUrl);
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://connectcall.vercel.app',
+        'X-Title': 'ConnectCall Dispute AI',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-flash-1.5',
+        messages: [
+          {
+            role: 'user',
+            content: [
               {
+                type: 'text',
                 text: `You are an impartial dispute arbitrator for ConnectCall, a platform where watchers pay hosts for phone/video consultations in Ghana.
 
 A dispute has been filed. The WATCHER claims the call did not happen or was too short.
 
 You are shown TWO screenshots of call logs from either WhatsApp or Telegram.
 
-═══════════════════════════════════════
-WHAT TO LOOK FOR — WhatsApp Call Log
-═══════════════════════════════════════
+WHAT TO LOOK FOR — WhatsApp Call Log:
 - Phone icon at the top
 - Contact name or number in BOLD
 - "Outgoing voice call" or "Incoming voice call" label
@@ -826,9 +831,7 @@ SIGNS OF FAKE SCREENSHOT:
 - Odd timestamps
 - Wrong app colors
 
-═══════════════════════════════════════
-JUDGMENT RULES
-═══════════════════════════════════════
+JUDGMENT RULES:
 1. HOST screenshot should show OUTGOING call to watcher's number
 2. WATCHER screenshot should show NO incoming call from host
 3. Call duration must be AT LEAST 2 MINUTES for host to win
@@ -843,38 +846,36 @@ Return ONLY a JSON object (no other text):
 }`,
               },
               {
-                inline_data: {
-                  mime_type: hostMediaType,
-                  data: hostImageBase64,
+                type: 'image_url',
+                image_url: {
+                  url: `data:${hostMediaType};base64,${hostImageBase64}`,
                 },
               },
               {
-                inline_data: {
-                  mime_type: watcherMediaType,
-                  data: watcherImageBase64,
+                type: 'image_url',
+                image_url: {
+                  url: `data:${watcherMediaType};base64,${watcherImageBase64}`,
                 },
               },
             ],
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 512,
           },
-        }),
-      }
-    );
+        ],
+        max_tokens: 512,
+        temperature: 0.1,
+      }),
+    });
 
     const data = await response.json();
 
-    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      console.error('[AI] Unexpected Gemini response:', JSON.stringify(data).substring(0, 500));
+    if (!data.choices?.[0]?.message?.content) {
+      console.error('[AI] Unexpected OpenRouter response:', JSON.stringify(data).substring(0, 500));
       return { verdict: 'inconclusive', confidence: 50, analysis: 'AI failed to analyze screenshots.' };
     }
 
-    const text = data.candidates[0].content.parts[0].text.trim();
+    const text = data.choices[0].message.content.trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('[AI] Could not parse JSON from Gemini response:', text.substring(0, 300));
+      console.error('[AI] Could not parse JSON from OpenRouter response:', text.substring(0, 300));
       return { verdict: 'inconclusive', confidence: 50, analysis: 'AI response could not be parsed.' };
     }
 
@@ -885,11 +886,11 @@ Return ONLY a JSON object (no other text):
     result.confidence = Math.max(0, Math.min(100, Math.round(result.confidence || 50)));
     result.analysis = result.analysis || 'No analysis provided.';
 
-    console.log(`[AI] Gemini verdict: ${result.verdict}, Confidence: ${result.confidence}%`);
+    console.log(`[AI] OpenRouter verdict: ${result.verdict}, Confidence: ${result.confidence}%`);
     return result;
 
   } catch (err) {
-    console.error('[AI] Gemini API error:', err.message);
+    console.error('[AI] OpenRouter API error:', err.message);
     return {
       verdict: 'inconclusive',
       confidence: 50,
