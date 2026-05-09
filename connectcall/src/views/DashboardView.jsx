@@ -25,8 +25,9 @@ export function DashboardView({
   const [ef, setEf]               = useState({});
   const [busy, setBusy]           = useState(false);
   const [requestingFollowup, setRequestingFollowup] = useState({});
-  const [markDoneCountdown, setMarkDoneCountdown] = useState({}); // { [payId]: secondsLeft }
+  const [markDoneCountdown, setMarkDoneCountdown] = useState({});
   const [now, setNow] = useState(Date.now());
+  const [tipOpen, setTipOpen] = useState(false);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(t);
@@ -316,23 +317,18 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
               </span>
             </div>
 
-            {(() => {
-              const [tipOpen, setTipOpen] = useState(false);
-              return (
-                <div style={{ background: `${c.blue}10`, border: `1px solid ${c.blue}30`, borderRadius: 14, marginBottom: 16, overflow: "hidden" }}>
-                  <div onClick={() => setTipOpen(o => !o)} style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                    <span style={{ fontSize: 18 }}>💡</span>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: c.blue, flex: 1 }}>How to get paid</span>
-                    <span style={{ fontSize: 12, color: c.blue }}>{tipOpen ? "▲" : "▼"}</span>
-                  </div>
-                  {tipOpen && (
-                    <div style={{ padding: "0 16px 14px", fontSize: 13, color: c.sub, lineHeight: 1.7 }}>
-                      Go to <strong style={{ color: c.text }}>Requests</strong> and <strong style={{ color: c.text }}>tap the contact link</strong> to call the watcher. You <strong style={{ color: c.text }}>must click the link</strong> — this records that you initiated the call. Then mark done to trigger your payout. Skipping causes an auto-refund.
-                    </div>
-                  )}
+            <div style={{ background: `${c.blue}10`, border: `1px solid ${c.blue}30`, borderRadius: 14, marginBottom: 16, overflow: "hidden" }}>
+              <div onClick={() => setTipOpen(o => !o)} style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <span style={{ fontSize: 18 }}>💡</span>
+                <span style={{ fontWeight: 700, fontSize: 13, color: c.blue, flex: 1 }}>How to get paid</span>
+                <span style={{ fontSize: 12, color: c.blue }}>{tipOpen ? "▲" : "▼"}</span>
+              </div>
+              {tipOpen && (
+                <div style={{ padding: "0 16px 14px", fontSize: 13, color: c.sub, lineHeight: 1.7 }}>
+                  Go to <strong style={{ color: c.text }}>Requests</strong> and <strong style={{ color: c.text }}>tap the contact link</strong> to call the watcher. You <strong style={{ color: c.text }}>must click the link</strong> — this records that you initiated the call. Then mark done to trigger your payout. Skipping causes an auto-refund.
                 </div>
-              );
-            })()}
+              )}
+            </div>
 
             <div style={{ background: `linear-gradient(135deg,${c.gold}08,${c.goldD})`, border: `1px solid ${c.gold}40`, borderRadius: 14, marginBottom: 16, overflow: "hidden" }}>
               <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
