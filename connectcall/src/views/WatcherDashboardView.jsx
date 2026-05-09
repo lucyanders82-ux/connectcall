@@ -269,7 +269,7 @@ export function WatcherDashboardView({
     const formatCountdown = s => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
     const canCancel      = p.status === "pending" && !myConf && !myRefund && !myDispute;
-        const canEarlyRefund = p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at && secondsLeft !== null && secondsLeft > 0;
+        const canEarlyRefund = p.status === "confirmed" && !myRefund && !myConf && !isDone && !myDispute && !p.call_initiated_at;
         const canDispute     = false; // Dispute is now handled by the confirm/dispute poll at the top, not per-card
 
     // Determine card border color
