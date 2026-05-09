@@ -631,6 +631,74 @@ app.post('/api/call/initiate', async (req, res) => {
   }
 });
 
+app.post('/api/call/reject', async (req, res) => {
+  try {
+    const { paymentId, hostId } = req.body;
+    if (!paymentId || !hostId) return res.status(400).json({ error: 'paymentId and hostId required' });
+
+    const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
+    if (!pay) return res.status(404).json({ error: 'Payment not found' });
+    if (pay.target_user_id !== hostId) return res.status(403).json({ error: 'Unauthorized' });
+    if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
+
+    // Check no active refund already
+    const { data: existingRefund } = await supabase
+      .from('refund_requests')
+      .select('id')
+      .eq('payment_id', paymentId)
+      .in('status', ['pending', 'pending_host', 'approved'])
+      .single();
+    if (existingRefund) return res.status(400).json({ error: 'A refund already exists for this payment' });
+
+    const totalPaid = parseFloat(pay.total_charged || pay.amount);
+    const refundAmount = parseFloat((totalPaid * parseFloat(process.env.EARLY_REFUND_PERCENT || '70') / 100).toFixed(2));
+
+    // Paystack refund
+    if (pay.paystack_ref) {
+      try {
+        await fetch('https://api.paystack.co/refund', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transaction: pay.paystack_ref, amount: Math.round(refundAmount * 100) }),
+        });
+      } catch (e) {
+        console.error('[Reject] Paystack refund failed:', e.message);
+      }
+    }
+
+    await supabase.from('payments').update({ status: 'refunded_partial' }).eq('id', paymentId);
+    await supabase.from('refund_requests').insert([{
+      payment_id: paymentId,
+      reason: 'Host rejected the request — unable to make the call',
+      status: 'approved',
+      watcher_id: pay.watcher_id,
+      watcher_name: pay.watcher_name,
+      refund_amount: refundAmount,
+      refund_type: 'host_rejected',
+      resolved_at: new Date().toISOString(),
+      auto_refunded: true,
+      refund_percentage: parseFloat(process.env.EARLY_REFUND_PERCENT || '70'),
+    }]);
+
+    // Notify watcher
+    try {
+      const { notifyHostBookingCancelled } = await import('./services/notification.service.js');
+      if (pay.watcher_contact) {
+        await notifyHostBookingCancelled(pay.watcher_contact, pay.watcher_name);
+      }
+    } catch (e) {
+      console.error('[Reject] Notify failed:', e.message);
+    }
+
+    console.log(`[Reject] Host ${hostId} rejected payment ${paymentId} — ${refundAmount} refunded`);
+    return res.json({ success: true, refundAmount, message: `Request rejected — GHS ${refundAmount} refunded to watcher` });
+
+  } catch (err) {
+    console.error('[Reject] Error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/api/call/mark-done', async (req, res) => {
   try {
     const { paymentId, hostId } = req.body;

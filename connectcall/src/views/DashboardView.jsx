@@ -407,8 +407,24 @@ export function DashboardView({
   </div>
 )}
                                                         {pay.status === "confirmed" && !callDone && !conf && !isDisputed && !refund && (
-                              <MarkDoneBtn payId={pay.id} live={live} onMarkDone={onMarkDone} />
-                            )}
+  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+    <div style={{ flex: 1 }}>
+      <MarkDoneBtn payId={pay.id} live={live} onMarkDone={onMarkDone} />
+    </div>
+    <Btn
+      small variant="red"
+      onClick={async () => {
+        if (!window.confirm("Reject this request? The watcher will receive a 70% refund immediately.")) return;
+        const { apiRejectRequest } = await import('../api.js');
+        const result = await apiRejectRequest(pay.id, live.id);
+        if (result.error) toast(result.error, "error");
+        else toast(result.message, "success");
+      }}
+    >
+      ✕ Reject
+    </Btn>
+  </div>
+)}
                           </div>
                         );
                       })}

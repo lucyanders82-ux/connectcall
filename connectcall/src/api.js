@@ -173,3 +173,12 @@ export async function apiInitiateCall(paymentId, hostId) {
   });
   return res.json();
 }
+
+export async function apiRejectRequest(paymentId, hostId) {
+  const res = await fetch(`${API_BASE}/api/call/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paymentId, hostId }),
+  });
+  return res.json();
+}
