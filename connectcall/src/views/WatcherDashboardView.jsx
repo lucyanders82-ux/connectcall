@@ -389,7 +389,7 @@ export function WatcherDashboardView({
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {canCancel && (
                 <Btn small variant="orange" disabled={refunding} onClick={async () => { setRefunding(true); await onRefundRequest(p.id, "Cancelling request before contact revealed"); setRefunding(false); }}>
-                  {refunding ? "Cancelling…" : "✕ Cancel (get 70% back)"}
+                 {refunding ? "Cancelling…" : "✕ Cancel (get 95% back)"}
                 </Btn>
               )}
 

@@ -278,7 +278,7 @@ app.post('/api/admin/approve-refund', requireAdmin, async (req, res) => {
     const pay = refund.payments;
 
     const refundableAmount = refund.refund_amount 
-      || parseFloat((parseFloat(pay.total_charged || pay.amount) * 0.7).toFixed(2));
+  || parseFloat((parseFloat(pay.total_charged || pay.amount) * 0.85).toFixed(2));
     const refundRes = await fetch('https://api.paystack.co/refund', {
       method: 'POST',
       headers: {
@@ -433,7 +433,7 @@ app.post('/api/admin/resolve-dispute', requireAdmin, async (req, res) => {
     const { data: dispute } = await supabase.from('disputes').select('*, payment:payment_id(*)').eq('id', disputeId).single();
     const payment = dispute?.payment;
     const totalPaid = parseFloat(payment?.total_charged || payment?.amount || 0);
-    const refundAmount = parseFloat((totalPaid * parseFloat(process.env.EARLY_REFUND_PERCENT || '70') / 100).toFixed(2));
+    const refundAmount = parseFloat((totalPaid * 85 / 100).toFixed(2));
 
     if (verdict === 'watcher') {
       if (payment?.paystack_ref) {
@@ -678,7 +678,7 @@ const refundAmount = parseFloat((totalPaid * REFUND_HOST_REJECTED / 100).toFixed
       refund_type: 'host_rejected',
       resolved_at: new Date().toISOString(),
       auto_refunded: true,
-      refund_percentage: parseFloat(process.env.EARLY_REFUND_PERCENT || '70'),
+      refund_percentage: REFUND_HOST_REJECTED,
     }]);
 
     // Notify watcher
