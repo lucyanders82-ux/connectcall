@@ -567,10 +567,32 @@ if (role === 'watcher' && payment.watcher_id !== userId) {
         return res.status(400).json({ error: 'Host evidence already submitted' });
       }
 
-      await supabase.from('disputes').update({
+      // 3-attempt limit
+      const hostAttempts = dispute.host_evidence_attempts || 0;
+      if (hostAttempts >= 3) {
+        return res.status(400).json({ error: 'Maximum evidence upload attempts reached (3). Contact admin.' });
+      }
+
+      // Duplicate screenshot detection — check if this URL was used in another dispute
+      const { data: duplicateCheck } = await supabase
+        .from('disputes')
+        .select('id')
+        .eq('host_evidence_url', evidenceUrl)
+        .neq('id', disputeId)
+        .limit(1)
+        .single();
+      if (duplicateCheck) {
+        await supabase.from('disputes').update({
+          host_evidence_attempts: hostAttempts + 1,
+        }).eq('id', disputeId);
+        return res.status(400).json({ error: 'This screenshot has already been used in another dispute. Upload a fresh screenshot.' });
+      }
+
+     await supabase.from('disputes').update({
         host_evidence_url: evidenceUrl,
         host_evidence_submitted_at: now,
-        status: 'watcher_evidence', // Move to watcher's turn
+        host_evidence_attempts: (dispute.host_evidence_attempts || 0) + 1,
+        status: 'watcher_evidence',
       }).eq('id', disputeId);
 
       // System message
@@ -604,9 +626,31 @@ if (role === 'watcher' && payment.watcher_id !== userId) {
         return res.status(400).json({ error: 'Watcher evidence already submitted' });
       }
 
+      // 3-attempt limit
+      const watcherAttempts = dispute.watcher_evidence_attempts || 0;
+      if (watcherAttempts >= 3) {
+        return res.status(400).json({ error: 'Maximum evidence upload attempts reached (3). Contact admin.' });
+      }
+
+      // Duplicate screenshot detection
+      const { data: duplicateCheck } = await supabase
+        .from('disputes')
+        .select('id')
+        .eq('watcher_evidence_url', evidenceUrl)
+        .neq('id', disputeId)
+        .limit(1)
+        .single();
+      if (duplicateCheck) {
+        await supabase.from('disputes').update({
+          watcher_evidence_attempts: watcherAttempts + 1,
+        }).eq('id', disputeId);
+        return res.status(400).json({ error: 'This screenshot has already been used in another dispute. Upload a fresh screenshot.' });
+      }
+
       await supabase.from('disputes').update({
         watcher_evidence_url: evidenceUrl,
         watcher_evidence_submitted_at: now,
+        watcher_evidence_attempts: (dispute.watcher_evidence_attempts || 0) + 1,
         status: 'ai_verdict_pending',
       }).eq('id', disputeId);
 
