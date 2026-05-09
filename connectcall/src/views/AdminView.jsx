@@ -18,7 +18,8 @@ export function AdminView({
   const [expandedPayments, setExpandedPayments] = useState(new Set());
   const [expandedCalls,    setExpandedCalls]    = useState(new Set());
   const [expandedDisputes, setExpandedDisputes] = useState(new Set()); // NEW
-  const [aiVerdictBusy, setAIVerdictBusy] = useState({});              // NEW
+  const [aiVerdictBusy, setAIVerdictBusy] = useState({});
+const [localResolved, setLocalResolved] = useState(new Set()); // track locally resolved disputes
 
   const pendingRefunds  = refundReqs.filter(r => r.status === "pending" || r.status === "pending_host");
   const pendingPayments = payments.filter(p => p.status === "pending" && p.paystack_verified);
@@ -209,7 +210,7 @@ export function AdminView({
             )}
 
             {/* Admin actions */}
-            {(isOpen || isEscalated) && (dispute.host_evidence_url || dispute.watcher_evidence_url) && (
+            {(isOpen || isEscalated) && !localResolved.has(dispute.id) && (dispute.host_evidence_url || dispute.watcher_evidence_url) && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                 <Btn
                   small variant="blue"
@@ -232,7 +233,7 @@ export function AdminView({
                       });
                       const result = await res.json();
                       if (result.error) toast("Failed: " + result.error, "error");
-                      else toast("Ruled in host's favor — payment released", "success");
+                      else { toast("Ruled in host's favor — payment released", "success"); setLocalResolved(prev => new Set([...prev, dispute.id])); }
                     } catch (e) { toast("Request failed", "error"); }
                     setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: false }));
                   }}
@@ -253,7 +254,7 @@ export function AdminView({
                       });
                       const result = await res.json();
                       if (result.error) toast("Failed: " + result.error, "error");
-                      else toast("Ruled in watcher's favor — refund processed", "success");
+                      else { toast("Ruled in watcher's favor — refund processed", "success"); setLocalResolved(prev => new Set([...prev, dispute.id])); }
                     } catch (e) { toast("Request failed", "error"); }
                     setAIVerdictBusy(prev => ({ ...prev, [dispute.id]: false }));
                   }}

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { c, S, PAYOUT_PROVIDERS, CURRENCY } from "../constants";
 import { safeArr, normaliseUser } from "../utils";
 import { Btn, Modal, Field, Avatar, Chip, OnlineDot, SectionHeader, PhotoPick, MultiPick } from "../components/UI";
@@ -24,7 +24,12 @@ export function DashboardView({
   const [editStep, setEditStep]   = useState(1);
   const [ef, setEf]               = useState({});
   const [busy, setBusy]           = useState(false);
-  const [requestingFollowup, setRequestingFollowup] = useState({}); // NEW: per-payment loading state
+  const [requestingFollowup, setRequestingFollowup] = useState({});
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
   const eu = k => v => setEf(x => ({ ...x, [k]: v }));
 
   const live    = normaliseUser(users.find(u => u.id === user.id) || user);
@@ -277,6 +282,21 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
               </div>
             </div>
 
+            <div style={{ background: `${c.blue}10`, border: `1px solid ${c.blue}30`, borderRadius: 14, padding: 20, marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <span style={{ fontSize: 22, marginTop: 2 }}>💡</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: c.blue, marginBottom: 6 }}>How to get paid — important!</div>
+                  <div style={{ fontSize: 13, color: c.sub, lineHeight: 1.7 }}>
+                    When a booking is confirmed, go to <strong style={{ color: c.text }}>Requests</strong> and{" "}
+                    <strong style={{ color: c.text }}>tap the contact link</strong> to call the watcher.
+                    You <strong style={{ color: c.text }}>must click the link</strong> — this records that you initiated the call.
+                    Then mark the call as done to trigger your payout. Skipping this step causes an auto-refund to the watcher.
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div style={{ background: `linear-gradient(135deg,${c.gold}10,${c.goldD})`, border: `1px solid ${c.gold}40`, borderRadius: 14, padding: 20, marginBottom: 16, textAlign: "center" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>🔗</div>
               <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 18, color: c.goldL, fontWeight: 600, marginBottom: 4 }}>Share Your Profile</div>
@@ -399,7 +419,7 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
                                   {hasInitiated && (() => {
                                     const initiatedAt = new Date(pay.call_initiated_at).getTime();
                                     const deadlineMs = initiatedAt + 30 * 60 * 1000;
-                                    const minsLeft = Math.max(0, Math.round((deadlineMs - Date.now()) / 60000));
+                                    const minsLeft = Math.max(0, Math.round((deadlineMs - now) / 60000));
                                     const isUrgent = minsLeft <= 10;
                                     return (
                                       <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: isUrgent ? `${c.red}15` : `${c.green}10`, border: `1px solid ${isUrgent ? c.red : c.green}30` }}>

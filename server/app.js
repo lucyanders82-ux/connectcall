@@ -594,12 +594,17 @@ app.post('/api/call/initiate', async (req, res) => {
       .single();
     if (activeRefund) return res.status(400).json({ error: 'Cannot initiate — an active refund request exists' });
 
-    // Only record first click
-    if (!pay.call_initiated_at) {
-      await supabase.from('payments').update({
-        call_initiated_at: new Date().toISOString(),
-      }).eq('id', paymentId);
+    // Only record first click — if already initiated, just return the existing timestamp
+    if (pay.call_initiated_at) {
+      const msSinceInitiated = Date.now() - new Date(pay.call_initiated_at).getTime();
+      // Silently return — don't reset the timer or re-notify
+      console.log(`[Initiate] Repeat click by host ${hostId} — ${Math.round(msSinceInitiated / 1000)}s since first click`);
+      return res.json({ success: true, call_initiated_at: pay.call_initiated_at, repeated: true });
     }
+
+    await supabase.from('payments').update({
+      call_initiated_at: new Date().toISOString(),
+    }).eq('id', paymentId);
 
     // Notify watcher that host has initiated contact
     try {
