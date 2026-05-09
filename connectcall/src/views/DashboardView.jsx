@@ -427,18 +427,20 @@ const badge = t === "requests" ? liveReqs.length : t === "missed" ? missedReqs.l
     <div style={{ flex: 1 }}>
       <MarkDoneBtn payId={pay.id} live={live} onMarkDone={onMarkDone} />
     </div>
-    <Btn
-      small variant="red"
-      onClick={async () => {
-        if (!window.confirm("Reject this request? The watcher will receive a 90% refund immediately.")) return;
-        const { apiRejectRequest } = await import('../api.js');
-        const result = await apiRejectRequest(pay.id, live.id);
-        if (result.error) toast(result.error, "error");
-        else toast(result.message, "success");
-      }}
-    >
-      ✕ Reject
-    </Btn>
+    {!pay.call_initiated_at && (
+      <Btn
+        small variant="red"
+        onClick={async () => {
+          if (!window.confirm("Reject this request? The watcher will receive a 90% refund immediately.")) return;
+          const { apiRejectRequest } = await import('../api.js');
+          const result = await apiRejectRequest(pay.id, live.id);
+          if (result.error) toast(result.error, "error");
+          else toast(result.message, "success");
+        }}
+      >
+        ✕ Reject
+      </Btn>
+    )}
   </div>
 )}
                           </div>
