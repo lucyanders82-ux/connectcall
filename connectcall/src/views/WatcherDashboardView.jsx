@@ -458,6 +458,8 @@ export function WatcherDashboardView({
               {previousPayments.map(p => <PaymentCard key={p.id} p={p} isLive={false} />)}
             </FolderCard>
           )}
+        </>
+      )}
     </div>
   );
 }
