@@ -729,6 +729,10 @@ const [localResolved, setLocalResolved] = useState(new Set()); // track locally 
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Reports ── */}
 
         {/* ── Reports ── */}
         {tab === "reports" && (
