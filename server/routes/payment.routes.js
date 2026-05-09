@@ -770,10 +770,10 @@ function getImageMediaType(url) {
 // ── Placeholder AI analysis — replace with actual Claude/GPT Vision call ──
 // ── Real Claude Vision AI analysis ──
 async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
-  const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-  if (!CLAUDE_API_KEY) {
-    console.warn('[AI] No CLAUDE_API_KEY set — falling back to placeholder');
+  if (!GEMINI_API_KEY) {
+    console.warn('[AI] No GEMINI_API_KEY set — falling back to placeholder');
     return {
       verdict: 'inconclusive',
       confidence: 50,
@@ -782,137 +782,114 @@ async function analyzeEvidenceWithAI(hostEvidenceUrl, watcherEvidenceUrl) {
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-opus-4-5',
-        max_tokens: 1024,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                                text: `You are an impartial dispute arbitrator for ConnectCall, a platform where watchers pay hosts for phone/video consultations in Ghana.
+    const hostImageBase64 = await fetchImageAsBase64(hostEvidenceUrl);
+    const watcherImageBase64 = await fetchImageAsBase64(watcherEvidenceUrl);
+    const hostMediaType = getImageMediaType(hostEvidenceUrl);
+    const watcherMediaType = getImageMediaType(watcherEvidenceUrl);
 
-A dispute has been filed. The system has confirmed the host clicked the contact link (call was initiated). The WATCHER claims the call did not happen or was too short.
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              {
+                text: `You are an impartial dispute arbitrator for ConnectCall, a platform where watchers pay hosts for phone/video consultations in Ghana.
+
+A dispute has been filed. The WATCHER claims the call did not happen or was too short.
 
 You are shown TWO screenshots of call logs from either WhatsApp or Telegram.
 
 ═══════════════════════════════════════
 WHAT TO LOOK FOR — WhatsApp Call Log
 ═══════════════════════════════════════
-
-A genuine WhatsApp call info screen shows:
-- A phone icon (📞) or video icon at the top
-- The contact's name or phone number in BOLD at the top
+- Phone icon at the top
+- Contact name or number in BOLD
 - "Outgoing voice call" or "Incoming voice call" label
-- Call duration displayed prominently (e.g., "5:23" meaning 5 minutes 23 seconds)
-- Date and time of the call (e.g., "Today at 2:15 PM" or "May 7, 2026 at 2:15 PM")
-- The WhatsApp green header bar at the top
-- Usually shows "Voice call" or "Video call" in smaller text
-
-A genuine Telegram call info screen shows:
-- The contact's name at the top
-- "Outgoing voice call" or "Incoming voice call"
-- Call duration (e.g., "5 minutes 23 seconds" or "5:23")
+- Call duration (e.g., "5:23")
 - Date and time
-- Telegram's dark or blue theme interface
+- WhatsApp green header bar
 
-═══════════════════════════════════════
-SIGNS OF A FAKE OR EDITED SCREENSHOT
-═══════════════════════════════════════
-- Inconsistent fonts (different from WhatsApp/Telegram's standard font)
-- Misaligned text or UI elements
-- Blurry or pixelated areas around the call duration
-- Odd timestamps that don't make sense
-- Cropped edges that hide parts of the screen
-- Screenshot from a different app pretending to be WhatsApp
-- Colors that don't match WhatsApp green or Telegram blue
-- If the screenshot looks like it was taken from a web browser instead of the app
+TELEGRAM:
+- Contact name at top
+- Outgoing/Incoming voice call label
+- Call duration
+- Date and time
+- Telegram dark or blue theme
+
+SIGNS OF FAKE SCREENSHOT:
+- Inconsistent fonts
+- Misaligned UI elements
+- Blurry areas around duration
+- Odd timestamps
+- Wrong app colors
 
 ═══════════════════════════════════════
 JUDGMENT RULES
 ═══════════════════════════════════════
+1. HOST screenshot should show OUTGOING call to watcher's number
+2. WATCHER screenshot should show NO incoming call from host
+3. Call duration must be AT LEAST 2 MINUTES for host to win
+4. Duration < 2 minutes → verdict = "watcher"
+5. Edited screenshot → verdict = "watcher"
 
-1. The HOST's screenshot should show an OUTGOING call to the watcher's number
-2. The WATCHER's screenshot should show NO incoming call from the host's number during the booked window
-3. Call duration must be AT LEAST 2 MINUTES for the host to win
-4. If the host's screenshot shows duration < 2 minutes → verdict = "watcher"
-5. If either screenshot appears edited → verdict = "watcher", confidence high
-
-Return ONLY a JSON object (no other text) in this exact format:
+Return ONLY a JSON object (no other text):
 {
   "verdict": "host" | "watcher" | "inconclusive",
   "confidence": 0-100,
-  "analysis": "Brief explanation of what you observed and why you reached this conclusion. 2-3 sentences max."
-}
-
-RULES:
-- verdict "host" = host's screenshot shows genuine outgoing call with duration >= 2 minutes AND watcher's screenshot is absent/weak
-- verdict "watcher" = host's screenshot missing, shows call < 2 minutes, appears edited, OR watcher's screenshot convincingly shows no call
-- verdict "inconclusive" = both screenshots are equally convincing, unreadable, or impossible to verify
-- confidence >= 85 only if the evidence is VERY clear (obvious genuine screenshot on one side, obvious absence/fake on other)
-- If you detect likely editing/fakery, note it in analysis and reduce confidence significantly
-- IMPORTANT: You are the final arbiter. Be decisive when the evidence is clear.`,
+  "analysis": "Brief 2-3 sentence explanation."
+}`,
               },
               {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: await getImageMediaType(hostEvidenceUrl),
-                  data: await fetchImageAsBase64(hostEvidenceUrl),
+                inline_data: {
+                  mime_type: hostMediaType,
+                  data: hostImageBase64,
                 },
               },
               {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: await getImageMediaType(watcherEvidenceUrl),
-                  data: await fetchImageAsBase64(watcherEvidenceUrl),
+                inline_data: {
+                  mime_type: watcherMediaType,
+                  data: watcherImageBase64,
                 },
               },
             ],
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 512,
           },
-        ],
-      }),
-    });
+        }),
+      }
+    );
 
     const data = await response.json();
 
-    if (!data.content || !data.content[0]?.text) {
-      console.error('[AI] Unexpected Claude response:', JSON.stringify(data).substring(0, 500));
-      return { verdict: 'inconclusive', confidence: 50, analysis: 'AI failed to analyze screenshots — unexpected response format.' };
+    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      console.error('[AI] Unexpected Gemini response:', JSON.stringify(data).substring(0, 500));
+      return { verdict: 'inconclusive', confidence: 50, analysis: 'AI failed to analyze screenshots.' };
     }
 
-    const text = data.content[0].text.trim();
-
-    // Extract JSON from response (handle cases where Claude adds markdown)
+    const text = data.candidates[0].content.parts[0].text.trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('[AI] Could not parse JSON from Claude response:', text.substring(0, 300));
-      return { verdict: 'inconclusive', confidence: 50, analysis: 'AI response could not be parsed as JSON.' };
+      console.error('[AI] Could not parse JSON from Gemini response:', text.substring(0, 300));
+      return { verdict: 'inconclusive', confidence: 50, analysis: 'AI response could not be parsed.' };
     }
 
     const result = JSON.parse(jsonMatch[0]);
-
-    // Validate the response
     if (!['host', 'watcher', 'inconclusive'].includes(result.verdict)) {
       result.verdict = 'inconclusive';
     }
     result.confidence = Math.max(0, Math.min(100, Math.round(result.confidence || 50)));
     result.analysis = result.analysis || 'No analysis provided.';
 
-    console.log(`[AI] Verdict: ${result.verdict}, Confidence: ${result.confidence}%`);
+    console.log(`[AI] Gemini verdict: ${result.verdict}, Confidence: ${result.confidence}%`);
     return result;
 
   } catch (err) {
-    console.error('[AI] Claude API error:', err.message);
+    console.error('[AI] Gemini API error:', err.message);
     return {
       verdict: 'inconclusive',
       confidence: 50,
