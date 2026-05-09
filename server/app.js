@@ -448,8 +448,8 @@ app.post('/api/admin/resolve-dispute', requireAdmin, async (req, res) => {
     } else {
       await supabase.from('payments').update({ status: 'completed' }).eq('id', payment.id);
       await supabase.from('refund_requests').update({ status: 'rejected', resolved_at: now }).eq('dispute_id', disputeId);
-      const { processHostPayout } = await import('./services/payment.service.js');
-      await processHostPayout(payment).catch(e => console.error('[AdminResolve] Payout failed:', e.message));
+      const { processPayout } = await import('./services/payout.service.js');
+await processPayout(payment.id, null).catch(e => console.error('[AdminResolve] Payout failed:', e.message));
     }
 
     await supabase.from('dispute_messages').insert([{
