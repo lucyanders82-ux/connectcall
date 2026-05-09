@@ -358,3 +358,248 @@ export function MobileNav({ setView, currentUser, isAdmin, handleLogout }) {
     </>
   );
 }
+
+// ─── FeedbackButton ──────────────────────────────────────────────────────────
+// Add this to the bottom of UI.jsx, then render <FeedbackButton /> in App.jsx
+// just above </> in the return, after <MobileNav>
+
+
+
+export function FeedbackButton() {
+  const [open, setOpen] = _useState(false);
+  const [step, setStep] = _useState(1); // 1 = rating, 2 = text, 3 = done
+  const [rating, setRating] = _useState(null);
+  const [text, setText] = _useState("");
+  const [sending, setSending] = _useState(false);
+
+  const reset = () => { setStep(1); setRating(null); setText(""); setSending(false); };
+
+  const submit = async () => {
+    if (!rating) return;
+    setSending(true);
+    try {
+      await fetch(`${(typeof API_BASE !== "undefined" ? API_BASE : "")||""}/api/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, text, ts: new Date().toISOString() }),
+      });
+    } catch (_) {}
+    setStep(3);
+    setSending(false);
+    setTimeout(() => { setOpen(false); reset(); }, 2000);
+  };
+
+  const emojis = [
+    { val: 1, icon: "😞", label: "Bad" },
+    { val: 2, icon: "😐", label: "Okay" },
+    { val: 3, icon: "🙂", label: "Good" },
+    { val: 4, icon: "😊", label: "Great" },
+    { val: 5, icon: "🤩", label: "Excellent" },
+  ];
+
+  return (
+    <>
+      {/* Floating trigger button */}
+      <button
+        onClick={() => { setOpen(o => !o); if (!open) reset(); }}
+        title="Send feedback"
+        style={{
+          position: "fixed",
+          bottom: 88, // above mobile nav
+          right: 18,
+          zIndex: 300,
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          background: "linear-gradient(135deg,#b8973a,#e8c96a)",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 20,
+          boxShadow: "0 4px 16px #00000055",
+          transition: "transform .2s, box-shadow .2s",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; e.currentTarget.style.boxShadow = "0 6px 24px #00000077"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 16px #00000055"; }}
+      >
+        {open ? "✕" : "💬"}
+      </button>
+
+      {/* Panel */}
+      {open && (
+        <div style={{
+          position: "fixed",
+          bottom: 144,
+          right: 18,
+          zIndex: 300,
+          width: 280,
+          background: "#13131e",
+          border: "1px solid #2a2a3a",
+          borderRadius: 16,
+          padding: 20,
+          boxShadow: "0 16px 48px #00000099",
+          animation: "fadeUp .2s ease",
+        }}>
+          {step === 1 && (
+            <>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 15, color: "#e8c96a", marginBottom: 4 }}>How's your experience?</div>
+              <div style={{ fontSize: 12, color: "#6b6b8a", marginBottom: 16 }}>Tap a rating to continue</div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                {emojis.map(e => (
+                  <button key={e.val} onClick={() => { setRating(e.val); setStep(2); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 2px", borderRadius: 8, transition: "background .15s" }}
+                    onMouseEnter={ev => ev.currentTarget.style.background = "#1e1e2e"}
+                    onMouseLeave={ev => ev.currentTarget.style.background = "none"}>
+                    <span style={{ fontSize: 26 }}>{e.icon}</span>
+                    <span style={{ fontSize: 10, color: "#6b6b8a" }}>{e.label}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 22 }}>{emojis.find(e => e.val === rating)?.icon}</span>
+                <span style={{ fontFamily: "'Playfair Display',serif", fontSize: 14, color: "#e8c96a" }}>
+                  {emojis.find(e => e.val === rating)?.label}
+                </span>
+              </div>
+              <textarea
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="Tell us more (optional)…"
+                rows={3}
+                style={{ width: "100%", background: "#1e1e2e", border: "1px solid #2a2a3a", borderRadius: 8, color: "#e8e8f0", fontSize: 13, padding: "8px 10px", fontFamily: "'Plus Jakarta Sans',sans-serif", resize: "none", boxSizing: "border-box", marginBottom: 12, outline: "none" }}
+              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setStep(1)} style={{ flex: 1, background: "#1e1e2e", border: "1px solid #2a2a3a", borderRadius: 8, color: "#6b6b8a", fontSize: 12, padding: "8px", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Back</button>
+                <button onClick={submit} disabled={sending} style={{ flex: 2, background: "linear-gradient(135deg,#b8973a,#e8c96a)", border: "none", borderRadius: 8, color: "#0a0a0f", fontSize: 12, fontWeight: 700, padding: "8px", cursor: sending ? "not-allowed" : "pointer", opacity: sending ? 0.6 : 1, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  {sending ? "Sending…" : "Send Feedback"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {step === 3 && (
+            <div style={{ textAlign: "center", padding: "12px 0" }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>✨</div>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 15, color: "#e8c96a" }}>Thank you!</div>
+              <div style={{ fontSize: 12, color: "#6b6b8a", marginTop: 4 }}>Your feedback helps us improve.</div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── FeedbackButton ──────────────────────────────────────────────────────────
+export function FeedbackButton() {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState(1);
+  const [rating, setRating] = useState(null);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const reset = () => { setStep(1); setRating(null); setText(""); setSending(false); };
+
+  const submit = async () => {
+    if (!rating) return;
+    setSending(true);
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:4000"}/api/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, text, ts: new Date().toISOString() }),
+      });
+    } catch (_) {}
+    setStep(3);
+    setSending(false);
+    setTimeout(() => { setOpen(false); reset(); }, 2000);
+  };
+
+  const emojis = [
+    { val: 1, icon: "😞", label: "Bad" },
+    { val: 2, icon: "😐", label: "Okay" },
+    { val: 3, icon: "🙂", label: "Good" },
+    { val: 4, icon: "😊", label: "Great" },
+    { val: 5, icon: "🤩", label: "Excellent" },
+  ];
+
+  return (
+    <>
+      <button
+        onClick={() => { setOpen(o => !o); if (!open) reset(); }}
+        title="Send feedback"
+        style={{
+          position: "fixed", bottom: 88, right: 18, zIndex: 300,
+          width: 44, height: 44, borderRadius: "50%",
+          background: `linear-gradient(135deg,${c.gold},${c.goldL})`,
+          border: "none", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 20, boxShadow: "0 4px 16px #00000055",
+          transition: "transform .2s, box-shadow .2s",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+      >
+        {open ? "✕" : "💬"}
+      </button>
+
+      {open && (
+        <div style={{
+          position: "fixed", bottom: 144, right: 18, zIndex: 300,
+          width: 280, background: c.card, border: `1px solid ${c.border}`,
+          borderRadius: 16, padding: 20,
+          boxShadow: "0 16px 48px #00000099", animation: "fadeUp .2s ease",
+        }}>
+          {step === 1 && (
+            <>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 15, color: c.goldL, marginBottom: 4 }}>How's your experience?</div>
+              <div style={{ fontSize: 12, color: c.sub, marginBottom: 16 }}>Tap a rating to continue</div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                {emojis.map(e => (
+                  <button key={e.val} onClick={() => { setRating(e.val); setStep(2); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 2px", borderRadius: 8 }}>
+                    <span style={{ fontSize: 26 }}>{e.icon}</span>
+                    <span style={{ fontSize: 10, color: c.sub }}>{e.label}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 22 }}>{emojis.find(e => e.val === rating)?.icon}</span>
+                <span style={{ fontFamily: "'Playfair Display',serif", fontSize: 14, color: c.goldL }}>{emojis.find(e => e.val === rating)?.label}</span>
+              </div>
+              <textarea
+                value={text} onChange={e => setText(e.target.value)}
+                placeholder="Tell us more (optional)…" rows={3}
+                style={{ width: "100%", background: c.surface, border: `1px solid ${c.border}`, borderRadius: 8, color: c.text, fontSize: 13, padding: "8px 10px", fontFamily: "'Plus Jakarta Sans',sans-serif", resize: "none", boxSizing: "border-box", marginBottom: 12, outline: "none" }}
+              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setStep(1)} style={{ flex: 1, background: c.surface, border: `1px solid ${c.border}`, borderRadius: 8, color: c.sub, fontSize: 12, padding: "8px", cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Back</button>
+                <button onClick={submit} disabled={sending} style={{ flex: 2, background: `linear-gradient(135deg,${c.gold},${c.goldL})`, border: "none", borderRadius: 8, color: "#0a0a0f", fontSize: 12, fontWeight: 700, padding: "8px", cursor: sending ? "not-allowed" : "pointer", opacity: sending ? 0.6 : 1, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+                  {sending ? "Sending…" : "Send Feedback"}
+                </button>
+              </div>
+            </>
+          )}
+          {step === 3 && (
+            <div style={{ textAlign: "center", padding: "12px 0" }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>✨</div>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 15, color: c.goldL }}>Thank you!</div>
+              <div style={{ fontSize: 12, color: c.sub, marginTop: 4 }}>Your feedback helps us improve.</div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
