@@ -14,6 +14,7 @@ export function SignupView({ onSignup, setView, toast }) {
     name: "", bio: "", platform: "WhatsApp", contactNumber: "", rate: "", tags: "", password: "",
     profilePhoto: null, photos: [],
     payoutName: "", payoutNumber: "", payoutProvider: PAYOUT_PROVIDERS[0],
+    country: "Ghana",
   });
   const set = k => v => setForm(x => ({ ...x, [k]: v }));
 
@@ -33,6 +34,12 @@ export function SignupView({ onSignup, setView, toast }) {
     if (!form.password.trim())      { toast("Set a password", "error"); return; }
     if (!form.payoutNumber.trim())  { toast("Payout number is required", "error"); return; }
     if (!form.payoutProvider)       { toast("Select your payout provider", "error"); return; }
+    if (form.country === "Nigeria" && form.payoutNumber.replace(/\D/g, "").length !== 11) {
+      toast("Nigerian payout number must be 11 digits", "error"); return;
+    }
+    if (form.country === "Ghana" && form.payoutNumber.replace(/\D/g, "").length !== 10) {
+      toast("Ghana MoMo number must be 10 digits", "error"); return;
+    }
     if (!acceptedTerms)             { toast("You must accept the Terms & Conditions", "error"); return; }
     setBusy(true);
     await onSignup({ ...form, rate: parseFloat(form.rate), tags: form.tags.split(",").map(t => t.trim()).filter(Boolean), role: "host" });
@@ -76,10 +83,11 @@ export function SignupView({ onSignup, setView, toast }) {
           <>
             <SectionHeader icon="📞" title="Public Call Information" subtitle="This is what watchers see after payment." />
             <PhotoPick label="Profile Photo" value={form.profilePhoto} onChange={set("profilePhoto")} circle />
+            <Field label="Country *" value={form.country} onChange={v => { set("country")(v); set("payoutProvider")(v === "Nigeria" ? "OPay" : PAYOUT_PROVIDERS[0]); }} options={["Ghana", "Nigeria"]} />
             <Field label="Name *" value={form.name} onChange={set("name")} />
             <Field label="Bio" value={form.bio} onChange={set("bio")} rows={3} placeholder="Describe your expertise…" />
             <Field label="Video Platform *" value={form.platform} onChange={set("platform")} options={["WhatsApp", "Telegram"]} />
-            <Field label="Contact Number / ID *" value={form.contactNumber} onChange={set("contactNumber")} maxLength={10} type="tel" hint="10-digit number. Shown to watchers after payment." />
+            <Field label="Contact Number / ID *" value={form.contactNumber} onChange={set("contactNumber")} maxLength={11} type="tel" hint={form.country === "Nigeria" ? "11-digit Nigerian number (e.g. 08012345678)" : "10-digit Ghana number. Shown to watchers after payment."} />
             <Field label={`Rate per Call (${CURRENCY}) *`} value={form.rate} onChange={set("rate")} type="number" hint="You receive this full amount. Platform adds 20% on top for watchers." />
             <Field label="Tags" value={form.tags} onChange={set("tags")} placeholder="tarot, career, love, wellness" />
             <Field label="Password *" value={form.password} onChange={set("password")} type="password" />
@@ -91,15 +99,31 @@ export function SignupView({ onSignup, setView, toast }) {
         {/* ── Host step 2 ── */}
         {mode === "host" && step === 2 && (
           <>
-            <SectionHeader icon="🔒" title="Private Payout Information" subtitle="NEVER shown to watchers. Used only for Paystack payouts." />
+            <SectionHeader icon="🔒" title="Private Payout Information" subtitle="NEVER shown to watchers." />
             <div style={{ background: `${c.purple}15`, border: `1px solid ${c.purple}40`, borderRadius: 10, padding: "12px 14px", marginBottom: 20, fontSize: 12, color: c.sub, lineHeight: 1.7 }}>
               <div style={{ fontWeight: 600, color: c.purple, marginBottom: 4 }}>🔐 Why we need this:</div>
-              <div>• Earnings sent automatically via <strong style={{ color: c.text }}>Paystack Transfers</strong> to your MoMo</div>
+              {form.country === "Nigeria"
+                ? <div>• Earnings sent automatically to your <strong style={{ color: c.text }}>Nigerian bank / OPay wallet</strong> via Paystack</div>
+                : <div>• Earnings sent automatically via <strong style={{ color: c.text }}>Paystack Transfers</strong> to your MoMo</div>
+              }
               <div>• <strong style={{ color: c.orange }}>Watchers NEVER see this</strong></div>
             </div>
             <Field label="Payout Name *" value={form.payoutName} onChange={set("payoutName")} placeholder={form.name || "Your full name"} />
-            <Field label="Payout Number *" value={form.payoutNumber} onChange={set("payoutNumber")} type="tel" maxLength={10} placeholder="MoMo number" />
-            <Field label="Payout Provider *" value={form.payoutProvider} onChange={set("payoutProvider")} options={PAYOUT_PROVIDERS} />
+            <Field
+              label={form.country === "Nigeria" ? "Nigerian Bank / OPay Number *" : "MoMo Number *"}
+              value={form.payoutNumber}
+              onChange={set("payoutNumber")}
+              type="tel"
+              maxLength={form.country === "Nigeria" ? 11 : 10}
+              placeholder={form.country === "Nigeria" ? "11-digit Nigerian number" : "10-digit MoMo number"}
+              hint={form.country === "Nigeria" ? "Enter your OPay or bank-linked number (11 digits)" : ""}
+            />
+            <Field
+              label="Payout Provider *"
+              value={form.payoutProvider}
+              onChange={set("payoutProvider")}
+              options={form.country === "Nigeria" ? ["OPay"] : PAYOUT_PROVIDERS.filter(p => p !== "OPay")}
+            />
             <div style={{ background: `${c.gold}10`, border: `1px solid ${c.gold}30`, borderRadius: 10, padding: "14px 16px", marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <span style={{ color: c.sub, fontSize: 13 }}>Your rate</span>

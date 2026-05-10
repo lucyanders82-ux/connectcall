@@ -292,6 +292,7 @@ app.post('/api/auth/signup', async (req, res) => {
       payout_number: '',
       payout_provider: '',
       paystack_recipient_code: '',
+      country: rest.country || 'Ghana',
       accepted_terms: true,
       accepted_terms_at: new Date().toISOString(),
       ...rest,
@@ -583,12 +584,18 @@ app.post('/api/host/onboard-payout', async (req, res) => {
         Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
         'Content-Type': 'application/json',
       },
+      const { data: host } = await supabase.from('users').select('country').eq('id', hostId).single();
+      const isNigerian = host?.country === 'Nigeria' || payoutProvider === 'OPay';
+      const paystackKey = isNigerian
+        ? (process.env.PAYSTACK_NG_SECRET_KEY || process.env.PAYSTACK_SECRET_KEY)
+        : process.env.PAYSTACK_SECRET_KEY;
+
       body: JSON.stringify({
-        type: 'ghipss',
+        type: isNigerian ? 'nuban' : 'ghipss',
         name: payoutName,
         account_number: payoutNumber,
-        bank_code: payoutProvider,
-        currency: 'GHS',
+        bank_code: isNigerian ? (process.env.OPAY_BANK_CODE || '100004') : payoutProvider,
+        currency: isNigerian ? 'NGN' : 'GHS',
       }),
     });
     const data = await recipientRes.json();
@@ -631,7 +638,7 @@ app.post('/api/host/approve-refund', async (req, res) => {
     const refundRes = await fetch('https://api.paystack.co/refund', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        Authorization: `Bearer ${paystackKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
