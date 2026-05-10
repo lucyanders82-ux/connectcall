@@ -510,6 +510,7 @@ export default function App() {
       <Toast toasts={toasts} />
       <Nav setView={setView} currentUser={currentUser} isAdmin={isAdmin} handleLogout={handleLogout} />
       <MobileNav setView={setView} currentUser={currentUser} isAdmin={isAdmin} handleLogout={handleLogout} />
+      <FeedbackButton />
 
       {view === "home" && <HomeView setView={setView} users={users} favorites={favorites} toggleFavorite={toggleFavorite} currentUser={currentUser} />}
       {view === "howItWorks" && <HowItWorksView setView={setView} />}
