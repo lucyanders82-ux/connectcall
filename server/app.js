@@ -473,7 +473,7 @@ app.post('/api/admin/release-funds', requireAdmin, async (req, res) => {
 
 app.post('/api/admin/auto-confirm-pending', requireAdmin, async (req, res) => {
   try {
-    const cutoff = new Date(Date.now() - 0 * 60 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const { data: pending } = await supabase.from('payments').select('*')
       .eq('status', 'pending').eq('paystack_verified', true).lt('verified_at', cutoff);
     let confirmed = 0;

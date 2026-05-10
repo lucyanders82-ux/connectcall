@@ -27,10 +27,17 @@ export async function processPayout(paymentId, callId) {
     return { alreadyProcessed: true, message: 'Already paid' };
   }
 
-  await supabase.from('payments')
+  const { data: claimResult } = await supabase.from('payments')
     .update({ payout_status: 'processing' })
     .eq('id', paymentId)
-    .eq('payout_status', 'pending');
+    .eq('payout_status', 'pending')
+    .select('id');
+
+  // If no rows updated, another process already claimed this payout
+  if (!claimResult || claimResult.length === 0) {
+    console.log(`[Payout] Skipped — already claimed by another process: ${paymentId}`);
+    return { alreadyProcessed: true, message: 'Payout already in progress' };
+  }
 
   const { data: host } = await supabase
     .from('users')

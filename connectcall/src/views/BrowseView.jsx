@@ -55,7 +55,9 @@ export function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav
       <div style={{ padding: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <div style={{ fontWeight: 600, fontSize: 16 }}>{u.name}</div>
-          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL, fontWeight: 600 }}>{S}{u.rate}</div>
+          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL, fontWeight: 600 }}>
+            {u.country === 'Nigeria' ? '₦' : S}{u.rate}
+          </div>
         </div>
         {!isBlurred && <HostRating hostId={u.id} />}
         <div style={{ color: c.sub, fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
