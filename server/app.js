@@ -681,7 +681,7 @@ app.post('/api/call/initiate', async (req, res) => {
     if (pay.target_user_id !== hostId) return res.status(403).json({ error: 'Unauthorized' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not confirmed' });
 
-    if (pay.contact_revealed_at) {
+   if (pay.contact_revealed_at && !pay.call_initiated_at) {
       const msSinceReveal = Date.now() - new Date(pay.contact_revealed_at).getTime();
       if (msSinceReveal > 10 * 60 * 1000) {
         return res.status(400).json({ error: 'Contact window expired — booking will be cancelled' });
@@ -809,10 +809,19 @@ app.post('/api/call/mark-done', async (req, res) => {
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
     if (pay.status !== 'confirmed') return res.status(400).json({ error: 'Payment not in confirmed state' });
 
-    if (pay.contact_revealed_at) {
+    // If host hasn't clicked link yet, check contact reveal window (10 min)
+    if (!pay.call_initiated_at && pay.contact_revealed_at) {
       const msSinceReveal = Date.now() - new Date(pay.contact_revealed_at).getTime();
       if (msSinceReveal > 10 * 60 * 1000) {
         return res.status(400).json({ error: 'Contact window expired — booking has been cancelled' });
+      }
+    }
+
+    // If host has clicked link, check 30-min deadline from initiation
+    if (pay.call_initiated_at) {
+      const msSinceInitiated = Date.now() - new Date(pay.call_initiated_at).getTime();
+      if (msSinceInitiated > 30 * 60 * 1000) {
+        return res.status(400).json({ error: 'Call window expired — 30 minutes passed since you initiated contact' });
       }
     }
 

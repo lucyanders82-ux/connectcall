@@ -38,7 +38,7 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
       if (psRes.data?.status === 'success') {
         const { data: payment } = await supabase.from('payments').select('*').eq('paystack_ref', ref).single();
         
-        if (payment && payment.status === 'confirmed') {
+        if (payment && (payment.status === 'pending_init' || payment.status === 'pending')) {
           const expectedAmount = Math.round(payment.total_charged * 100);
           
           if (psRes.data.amount >= expectedAmount) {

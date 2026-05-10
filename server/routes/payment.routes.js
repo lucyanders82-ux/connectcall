@@ -39,8 +39,9 @@ router.post('/initialize', async (req, res) => {
       return res.status(400).json({ error: 'hostId, watcherName, and watcherContact are required' });
     }
 
-    if (!/^\d{10}$/.test(watcherContact)) {
-      return res.status(400).json({ error: 'Contact number must be exactly 10 digits' });
+    const cleanContact = watcherContact.replace(/\D/g, '');
+    if (cleanContact.length !== 10 && cleanContact.length !== 11) {
+      return res.status(400).json({ error: 'Contact number must be 10 digits (Ghana) or 11 digits (Nigeria)' });
     }
 
     const { data: host, error: hostErr } = await supabase
@@ -192,8 +193,13 @@ router.post('/watcher/refund', async (req, res) => {
     const { paymentId, reason, watcherId } = req.body;
     if (!paymentId) return res.status(400).json({ error: 'paymentId is required' });
 
-    const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
+   const { data: pay } = await supabase.from('payments').select('*').eq('id', paymentId).single();
     if (!pay) return res.status(404).json({ error: 'Payment not found' });
+
+    // Verify watcher owns this payment
+    if (watcherId && pay.watcher_id && pay.watcher_id !== watcherId) {
+      return res.status(403).json({ error: 'Unauthorized — this is not your payment' });
+    }
 
     // Check for duplicate pending refund
     const { data: existingRefund } = await supabase
