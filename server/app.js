@@ -3,6 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
 import cron from 'node-cron';
@@ -27,13 +28,27 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
 function requireAdmin(req, res, next) {
-  const token = req.headers['x-admin-token'];
+  const bearer = req.headers.authorization?.replace('Bearer ', '');
+  const legacyToken = req.headers['x-admin-token'];
+
+  if (bearer) {
+    try {
+      const decoded = jwt.verify(bearer, process.env.JWT_SECRET || 'fallback-dev-secret-change-in-production');
+      if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      req.admin = decoded;
+      return next();
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+  }
+
+  // Legacy fallback — keeps old x-admin-token working during transition
   if (!ADMIN_SECRET) {
     console.error('[Auth] ADMIN_SECRET env var is not set!');
     return res.status(500).json({ error: 'Server misconfiguration' });
   }
-  if (!token || token !== ADMIN_SECRET) {
-    console.warn(`[Auth] Invalid admin token received: "${token}"`);
+  if (!legacyToken || legacyToken !== ADMIN_SECRET) {
+    console.warn(`[Auth] Invalid admin token received: "${legacyToken}"`);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();

@@ -19,6 +19,17 @@ const EVIDENCE_WINDOW_MS = 20 * 60 * 1000;
 const FOLLOWUP_WINDOW_MS = 10 * 60 * 1000;
 const PAYSTACK_NG_SECRET = process.env.PAYSTACK_NG_SECRET_KEY || process.env.PAYSTACK_SECRET_KEY;
 
+// ADD THIS:
+const initializeAttempts = new Map();
+function rateLimit(ip, max, windowMs) {
+  const now = Date.now();
+  const entry = initializeAttempts.get(ip) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + windowMs; }
+  entry.count++;
+  initializeAttempts.set(ip, entry);
+  return entry.count > max;
+}
+
 // Get the right Paystack key based on payment currency
 function getPaystackKey(payment) {
   return payment?.currency === 'NGN' ? PAYSTACK_NG_SECRET : PAYSTACK_SECRET;
@@ -50,6 +61,9 @@ async function paystackRequest(method, path, body) {
 // POST /api/pay/initialize
 router.post('/initialize', async (req, res) => {
   try {
+    if (rateLimit(req.ip, 5, 60 * 60 * 1000)) {
+  return res.status(429).json({ error: 'Too many payment attempts. Please wait an hour.' });
+}
     const { hostId, watcherId, watcherName, watcherContact, watcherPlatform } = req.body;
 
     if (!hostId || !watcherName || !watcherContact) {
@@ -910,6 +924,10 @@ JUDGMENT RULES:
 6. No status bar visible at top of screenshot → verdict = "watcher" (likely cropped)
 7. Screenshot appears to show only a portion of the screen → verdict = "watcher"
 8. If you cannot clearly read the full call duration → verdict = "watcher"
+9. Screenshot appears digitally altered (inconsistent pixel density, smeared text, clone-stamped areas) → verdict = "watcher"
+10. Call duration shows as exactly 0:00 or is missing entirely → verdict = "watcher"
+11. If the call log shows "Missed call" or "Cancelled call" → verdict = "watcher"
+12. If screenshot shows a call list but none of the numbers match the watcher's number pattern → verdict = "watcher"
 
 Return ONLY a JSON object (no other text):
 {
@@ -1060,17 +1078,21 @@ router.post('/call/request-followup', async (req, res) => {
     }
 
     // Check for existing follow-up
-    const { data: existing } = await supabase
-      .from('followup_requests')
-      .select('id, status')
-      .eq('payment_id', paymentId)
-      .order('requested_at', { ascending: false })
-      .limit(1)
-      .single();
+    const { data: allFollowups } = await supabase
+  .from('followup_requests')
+  .select('id, status')
+  .eq('payment_id', paymentId)
+  .order('requested_at', { ascending: false });
 
-    if (existing && ['pending', 'accepted'].includes(existing.status)) {
-      return res.status(400).json({ error: 'A follow-up request already exists' });
-    }
+const MAX_FOLLOWUPS = 2;
+if ((allFollowups?.length || 0) >= MAX_FOLLOWUPS) {
+  return res.status(400).json({ error: `Follow-up limit reached — maximum ${MAX_FOLLOWUPS} attempts allowed per booking` });
+}
+
+const latestFollowup = allFollowups?.[0];
+if (latestFollowup && ['pending', 'accepted'].includes(latestFollowup.status)) {
+  return res.status(400).json({ error: 'A follow-up request is already active' });
+}
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + FOLLOWUP_WINDOW_MS); // 10 min
