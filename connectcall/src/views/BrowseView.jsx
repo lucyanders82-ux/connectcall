@@ -55,8 +55,11 @@ export function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav
       <div style={{ padding: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <div style={{ fontWeight: 600, fontSize: 16 }}>{u.name}</div>
-          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL, fontWeight: 600 }}>
-            {u.country === 'Nigeria' ? '₦' : S}{u.rate}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {u.country === 'Nigeria' && <span style={{ fontSize: 14 }}>🇳🇬</span>}
+            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL, fontWeight: 600 }}>
+              {u.country === 'Nigeria' ? '₦' : S}{u.rate}
+            </div>
           </div>
         </div>
         {!isBlurred && <HostRating hostId={u.id} />}
@@ -177,7 +180,10 @@ export function BrowseView({ users, payments, onInitiatePayment, currentUser, to
 
   const confirmPay = async () => {
     if (!watcher.trim()) { toast("Enter your name", "error"); return; }
-    if (!watcherContact.trim() || watcherContact.length !== 10) { toast("Enter a valid 10-digit contact number", "error"); return; }
+    const cleanContact = watcherContact.replace(/\D/g, "");
+    if (!cleanContact || (cleanContact.length !== 10 && cleanContact.length !== 11)) {
+      toast("Enter a valid contact number (10 digits Ghana, 11 digits Nigeria)", "error"); return;
+    }
     setPaying(true);
     await onInitiatePayment(payModal, { watcherName: watcher, watcherContact, watcherPlatform });
     setPaying(false);
@@ -205,9 +211,10 @@ export function BrowseView({ users, payments, onInitiatePayment, currentUser, to
     setReportModal(null); setReportReason(""); setReportDetails("");
   };
 
-  const FEE_PCT     = 20;
-  const feePreview  = payModal ? parseFloat((payModal.rate * FEE_PCT / 100).toFixed(2)) : 0;
+  const FEE_PCT      = 20;
+  const feePreview   = payModal ? parseFloat((payModal.rate * FEE_PCT / 100).toFixed(2)) : 0;
   const totalPreview = payModal ? payModal.rate + feePreview : 0;
+  const currencySymbol = payModal?.country === "Nigeria" ? "₦" : S;
 
   return (
     <div style={{ minHeight: "calc(100vh - 60px)" }}>
@@ -350,19 +357,19 @@ export function BrowseView({ users, payments, onInitiatePayment, currentUser, to
           <div style={{ background: `${c.gold}12`, border: `1px solid ${c.gold}40`, borderRadius: 12, padding: 20, marginBottom: 18 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ color: c.sub, fontSize: 13 }}>Consultation fee</span>
-              <span style={{ fontWeight: 600 }}>{S}{payModal.rate}</span>
+              <span style={{ fontWeight: 600 }}>{currencySymbol}{payModal.rate}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${c.border}` }}>
               <span style={{ color: c.sub, fontSize: 13 }}>Platform fee ({FEE_PCT}%)</span>
-              <span style={{ color: c.sub }}>{S}{feePreview}</span>
+              <span style={{ color: c.sub }}>{currencySymbol}{feePreview}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span style={{ fontWeight: 600 }}>Total</span>
-              <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 28, color: c.goldL, fontWeight: 600 }}>{S}{totalPreview.toFixed(2)}</div>
+              <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 28, color: c.goldL, fontWeight: 600 }}>{currencySymbol}{totalPreview.toFixed(2)}</div>
             </div>
           </div>
           <Field label="Your Name" value={watcher} onChange={setWatcher} disabled />
-          <Field label="Contact Number *" value={watcherContact} onChange={setWatcherContact} type="tel" maxLength={10} hint="10-digit WhatsApp/Telegram number" />
+          <Field label="Contact Number *" value={watcherContact} onChange={setWatcherContact} type="tel" maxLength={11} hint={payModal?.country === "Nigeria" ? "11-digit Nigerian number" : "10-digit Ghana number"} />
           <Field label="Preferred Platform" value={watcherPlatform} onChange={setWatcherPlatform} options={["WhatsApp", "Telegram"]} />
           {!paying
             ? <Btn onClick={confirmPay} full style={{ marginTop: 8 }}>Pay {S}{totalPreview.toFixed(2)} Securely →</Btn>
