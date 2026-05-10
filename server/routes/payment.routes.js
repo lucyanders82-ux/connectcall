@@ -14,9 +14,26 @@ const REFUND_DISPUTE_WATCHER = 85;   // Dispute ruled for watcher
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Window (ms) during which watcher can claim "host didn't contact me"
-const NO_CONTACT_WINDOW_MS = 3 * 60 * 1000; // 3 minutes
-const EVIDENCE_WINDOW_MS = 20 * 60 * 1000; // 20 minutes per side
-const FOLLOWUP_WINDOW_MS = 10 * 60 * 1000; // 10 minutes for watcher to respond to follow-up
+const NO_CONTACT_WINDOW_MS = 3 * 60 * 1000;
+const EVIDENCE_WINDOW_MS = 20 * 60 * 1000;
+const FOLLOWUP_WINDOW_MS = 10 * 60 * 1000;
+const PAYSTACK_NG_SECRET = process.env.PAYSTACK_NG_SECRET_KEY || process.env.PAYSTACK_SECRET_KEY;
+
+// Get the right Paystack key based on payment currency
+function getPaystackKey(payment) {
+  return payment?.currency === 'NGN' ? PAYSTACK_NG_SECRET : PAYSTACK_SECRET;
+}
+
+// Issue a Paystack refund using the correct key for the payment's currency
+async function issuePaystackRefund(payment, amountInSubunit) {
+  const key = getPaystackKey(payment);
+  const res = await fetch('https://api.paystack.co/refund', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transaction: payment.paystack_ref, amount: amountInSubunit }),
+  });
+  return res.json();
+}
 
 async function paystackRequest(method, path, body) {
   const res = await fetch(`https://api.paystack.co${path}`, {
@@ -58,6 +75,10 @@ router.post('/initialize', async (req, res) => {
     const watcherEmail = `${safeName}_${Date.now().toString().slice(-6)}@connectcallpay.com`;
     const reference = generatePaymentReference();
 
+    // Detect currency from host's country
+    const { data: hostForCurrency } = await supabase.from('users').select('country').eq('id', hostId).single();
+    const currency = hostForCurrency?.country === 'Nigeria' ? 'NGN' : 'GHS';
+
     const { error: insertErr } = await supabase.from('payments').insert([{
       target_user_id: hostId,
       watcher_id: watcherId || null,
@@ -72,6 +93,7 @@ router.post('/initialize', async (req, res) => {
       paystack_ref: reference,
       payout_status: 'pending',
       payout_attempts: 0,
+      currency,
     }]);
 
     if (insertErr) {
@@ -82,7 +104,7 @@ router.post('/initialize', async (req, res) => {
       email: watcherEmail,
       amount: amounts.amountPesewas,
       reference,
-      currency: 'GHS',
+      currency,
       metadata: { hostId, watcherId, reference, hostName: host.name },
       callback_url: `${FRONTEND_URL}/payment-callback?ref=${reference}`,
     });
@@ -323,10 +345,7 @@ async function handleEarlyCancel(pay, reason, watcherId, res) {
   let paystackRefundSuccess = false;
   if (pay.paystack_ref) {
     try {
-      const refundRes = await paystackRequest('POST', '/refund', {
-        transaction: pay.paystack_ref,
-        amount: Math.round(refundAmount * 100),
-      });
+      const refundRes = await issuePaystackRefund(pay, Math.round(refundAmount * 100));
       paystackRefundSuccess = refundRes.status;
       if (!paystackRefundSuccess) {
         console.error('[EarlyCancel] Paystack refund failed:', refundRes.message);
@@ -478,10 +497,7 @@ async function handleNoContactClaim(pay, reason, watcherId, res) {
   let paystackRefundSuccess = false;
   if (pay.paystack_ref) {
     try {
-      const refundRes = await paystackRequest('POST', '/refund', {
-        transaction: pay.paystack_ref,
-        amount: Math.round(refundAmount * 100),
-      });
+      const refundRes = await issuePaystackRefund(pay, Math.round(refundAmount * 100));
       paystackRefundSuccess = refundRes.status;
     } catch (e) {
       console.error('[NoContact] Paystack error:', e.message);
@@ -980,10 +996,7 @@ async function resolveDisputeOutcome(disputeId, verdict) {
   if (verdict === 'watcher') {
     if (payment.paystack_ref) {
       try {
-        await paystackRequest('POST', '/refund', {
-          transaction: payment.paystack_ref,
-          amount: Math.round(refundAmount * 100),
-        });
+        await issuePaystackRefund(payment, Math.round(refundAmount * 100));
       } catch (e) {
         console.error('[ResolveDispute] Refund failed:', e.message);
       }
