@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "./supabase";
 import { Toast, Petals, Nav, MobileNav, SkeletonCard, FeedbackButton } from "./components/UI";
 
@@ -149,6 +149,15 @@ export default function App() {
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, [currentUser?.id]);
+
+  // ── pre-computed combined payment views (fixes realtime derived state gaps) ──
+  const enrichedPayments = useMemo(() => payments.map(p => ({
+    ...p,
+    _conf:    callConfirmations.find(cc => cc.payment_id === p.id) || null,
+    _dispute: disputes.find(d => d.payment_id === p.id) || null,
+    _refund:  refundReqs.find(r => r.payment_id === p.id) || null,
+    _followup:followupReqs.find(f => f.payment_id === p.id) || null,
+  })), [payments, callConfirmations, disputes, refundReqs, followupReqs]);
 
   // ── toast helper ──────────────────────────────────────────────────────────
   const toast = useCallback((msg, type = "success") => {
@@ -520,7 +529,7 @@ export default function App() {
       {view === "forgotPassword" && <ForgotPasswordView setView={setView} toast={toast} />}
       {view === "browse" && (
         <BrowseView
-          users={users} payments={payments} onInitiatePayment={handleInitiatePayment}
+          users={users} payments={enrichedPayments} onInitiatePayment={handleInitiatePayment}
           currentUser={currentUser} toast={toast} verifyPrompts={verifyPrompts}
           onAnswerVerify={handleAnswerVerify} setView={setView} refundReqs={refundReqs}
           onRefundRequest={handleRefundRequest} onHostApproveRefund={handleHostApproveRefund}
@@ -531,7 +540,7 @@ export default function App() {
       )}
       {view === "dashboard" && currentUser && currentUser.role === "host" && (
         <DashboardView
-          user={currentUser} users={users} payments={payments} calls={calls}
+          user={currentUser} users={users} payments={enrichedPayments} calls={calls}
           verifyPrompts={verifyPrompts} onMarkDone={handleMarkDone} onUpdate={handleUpdateUser}
           onAnswerVerify={handleAnswerVerify} toast={toast} setView={setView}
           refundReqs={refundReqs} onHostApproveRefund={handleHostApproveRefund}
@@ -550,7 +559,7 @@ export default function App() {
       )}
       {view === "dashboard" && currentUser && currentUser.role === "watcher" && (
         <WatcherDashboardView
-          user={currentUser} users={users} payments={payments} refundReqs={refundReqs}
+          user={currentUser} users={users} payments={enrichedPayments} refundReqs={refundReqs}
           onRefundRequest={handleRefundRequest} toast={toast} setView={setView}
           callConfirmations={callConfirmations} onConfirmCall={handleConfirmCall}
           favorites={favorites} toggleFavorite={toggleFavorite}
@@ -562,7 +571,7 @@ export default function App() {
       )}
       {view === "admin" && isAdmin && (
         <AdminView
-          users={users} payments={payments} calls={calls} wallet={adminWallet}
+          users={users} payments={enrichedPayments} calls={calls} wallet={adminWallet}
           verifyPrompts={verifyPrompts} onRelease={handleRelease} reports={reports}
           onPushVerify={handlePushVerify} setView={setView} confirmPayment={confirmPayment}
           refundReqs={refundReqs} callConfirmations={callConfirmations}

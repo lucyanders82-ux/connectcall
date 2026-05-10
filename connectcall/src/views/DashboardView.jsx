@@ -337,10 +337,10 @@ export function DashboardView({
                       </div>
                       {liveReqs.map(pay => {
                         const callDone = calls.find(cl => cl.payment_id === pay.id || cl.paymentId === pay.id);
-                        const refund   = refundReqs.find(r => r.payment_id === pay.id);
-                        const conf     = (callConfirmations || []).find(cc => cc.payment_id === pay.id);
-                        const dispute  = disputes.find(d => d.payment_id === pay.id);
-                        const followup = followupReqs.find(f => f.payment_id === pay.id);
+const refund   = pay._refund  || refundReqs.find(r => r.payment_id === pay.id);
+const conf     = pay._conf    || (callConfirmations || []).find(cc => cc.payment_id === pay.id);
+const dispute  = pay._dispute || disputes.find(d => d.payment_id === pay.id);
+const followup = pay._followup|| followupReqs.find(f => f.payment_id === pay.id);
                         const isDisputed = pay.status === "disputed" || !!dispute;
                         const isCancelled = pay.status === "cancelled" || pay.status === "refunded_partial";
                         const hasInitiated = !!pay.call_initiated_at || !!initiatedPayments[pay.id];

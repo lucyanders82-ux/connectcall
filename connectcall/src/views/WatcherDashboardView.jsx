@@ -214,10 +214,10 @@ export function WatcherDashboardView({
   // ── PaymentCard ────────────────────────────────────────────────────────────
   const PaymentCard = ({ p, isLive }) => {
     const host      = users.find(u => u.id === (p.target_user_id || p.targetUserId));
-    const myRefund  = refundReqs.find(r => r.payment_id === p.id);
-    const myDispute = disputes.find(d => d.payment_id === p.id);
-    const myFollowup= followupReqs.find(f => f.payment_id === p.id);
-    const myConf    = (callConfirmations || []).find(cc => cc.payment_id === p.id);
+    const myRefund  = p._refund  || refundReqs.find(r => r.payment_id === p.id);
+const myDispute = p._dispute || disputes.find(d => d.payment_id === p.id);
+const myFollowup= p._followup|| followupReqs.find(f => f.payment_id === p.id);
+const myConf    = p._conf    || (callConfirmations || []).find(cc => cc.payment_id === p.id);
     const isDone    = p.status === "completed" || myConf?.status === "confirmed" || myConf?.status === "auto_confirmed" || myDispute?.status === "resolved_host";
     const [confirming, setConfirming] = useState(false);
     const [refunding,  setRefunding]  = useState(false);
