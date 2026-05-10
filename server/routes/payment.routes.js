@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { supabase } from '../app.js';
 import { calculatePaymentAmounts, generatePaymentReference } from '../services/payment.service.js';
+import { getGhsToNgnRate } from '../app.js';
 
 const router = express.Router();
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;

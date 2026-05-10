@@ -27,6 +27,28 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
+// ── Live FX rate cache ────────────────────────────────────────────────────
+let GHS_TO_NGN_RATE = parseFloat(process.env.GHS_TO_NGN_RATE || '50');
+
+async function refreshFxRate() {
+  try {
+    const res = await fetch('https://api.exchangerate-api.com/v4/latest/GHS');
+    const data = await res.json();
+    const rate = data?.rates?.NGN;
+    if (rate && rate > 0) {
+      GHS_TO_NGN_RATE = rate;
+      console.log(`[FX] GHS→NGN rate updated: ${rate}`);
+    } else {
+      console.warn('[FX] Invalid rate received — keeping previous rate:', GHS_TO_NGN_RATE);
+    }
+  } catch (e) {
+    console.error('[FX] Rate fetch failed (non-fatal) — keeping previous rate:', e.message);
+  }
+}
+
+// Fetch on boot, then daily
+refreshFxRate();
+
 function requireAdmin(req, res, next) {
   const bearer = req.headers.authorization?.replace('Bearer ', '');
   const legacyToken = req.headers['x-admin-token'];
@@ -1183,6 +1205,12 @@ app.post('/api/admin/withdraw', requireAdmin, async (req, res) => {
   }
 });
 
+app.get('/api/fx-rate', (req, res) => res.json({
+  GHS_TO_NGN: GHS_TO_NGN_RATE,
+  source: 'exchangerate-api.com',
+  cachedAt: new Date().toISOString(),
+}));
+
 app.get('/health', (req, res) => res.json({
   ok: true,
   ts: new Date().toISOString(),
@@ -1226,8 +1254,15 @@ cron.schedule('*/30 * * * *', async () => {
   }
 });
 
+cron.schedule('0 6 * * *', async () => {
+  await refreshFxRate();
+});
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  EXPORTS (used internally by other service files)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { isNigerianNumber, toNigeriaIntl, processOPayPayout };
+export { isNigerianNumber, toNigeriaIntl, processOPayPayout, getGhsToNgnRate };
+
+function getGhsToNgnRate() { return GHS_TO_NGN_RATE; }
