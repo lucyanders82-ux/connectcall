@@ -4,96 +4,209 @@ import { safeArr } from "../utils";
 import { Btn, Modal, Field, Chip, OnlineDot, Spinner, Avatar } from "../components/UI";
 import { HostRating, HostResponseRate } from "../components/HostRating";
 
-// ─── HostCard ────────────────────────────────────────────────────────────────
+// ─── HostCard (BrowseView) ────────────────────────────────────────────────────
 export function HostCard({ u, onConnect, setGallery, onReport, onFavorite, isFav, currentUser }) {
   const [showFullBio, setShowFullBio] = useState(false);
   const photos = [u.profilePhoto, ...safeArr(u.photos)].filter(Boolean);
   const [idx, setIdx] = useState(0);
   const isBlurred = !currentUser;
-
+ 
   return (
-    <div className="fi" style={{ background: `linear-gradient(180deg,${c.card},#1a1a24)`, border: `1px solid ${c.border}`, borderRadius: 18, overflow: "hidden", cursor: "pointer", transition: "all .3s", position: "relative" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = c.gold; e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = `0 20px 50px ${c.gold}10`; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
-
+    <div className="fi" style={{
+      background: c.card,
+      border: `1px solid ${c.border}`,
+      borderRadius: 20,
+      overflow: "hidden",
+      cursor: "pointer",
+      transition: "all .35s cubic-bezier(.4,0,.2,1)",
+      position: "relative",
+    }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = `${c.gold}60`;
+        e.currentTarget.style.transform = "translateY(-6px)";
+        e.currentTarget.style.boxShadow = `0 24px 60px ${c.gold}12, 0 8px 24px #00000060`;
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = c.border;
+        e.currentTarget.style.transform = "";
+        e.currentTarget.style.boxShadow = "";
+      }}>
+ 
+      {/* Favorite button */}
       {currentUser && (
         <button onClick={e => { e.stopPropagation(); onFavorite(u.id); }}
-          style={{ position: "absolute", top: 12, right: 12, zIndex: 10, background: "#0a0a0fcc", border: "none", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, backdropFilter: "blur(4px)", color: isFav ? c.gold : c.sub, transition: "all .2s" }}
-          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
+          style={{
+            position: "absolute", top: 14, right: 14, zIndex: 10,
+            background: "rgba(13,10,18,0.7)",
+            border: `1px solid ${isFav ? c.gold + "60" : "#ffffff18"}`,
+            borderRadius: "50%", width: 36, height: 36,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", fontSize: 16,
+            backdropFilter: "blur(8px)",
+            color: isFav ? c.gold : "#ffffff80",
+            transition: "all .2s",
+          }}
+          onMouseEnter={e => e.currentTarget.style.transform = "scale(1.15)"}
           onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}>
           {isFav ? "❤️" : "♡"}
         </button>
       )}
-
-      <div style={{ position: "relative", width: "100%", aspectRatio: "1/1", overflow: "hidden" }}>
+ 
+      {/* Photo area */}
+      <div style={{ position: "relative", width: "100%", aspectRatio: "4/5", overflow: "hidden" }}>
         {photos.length > 0
-          ? <img src={photos[idx]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: isBlurred ? "blur(4px) brightness(0.7)" : "none", transform: isBlurred ? "scale(1.05)" : "none", transition: "filter .3s" }} />
-          : <div style={{ width: "100%", height: "100%", background: `linear-gradient(135deg,${c.goldD},#1a1a2e)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Cormorant Garamond',serif", fontSize: 64, color: c.gold, opacity: .3 }}>{u.avatar}</div>
+          ? <img src={photos[idx]} alt="" style={{
+              width: "100%", height: "100%", objectFit: "cover",
+              filter: isBlurred ? "blur(6px) brightness(0.6)" : "none",
+              transform: isBlurred ? "scale(1.08)" : "scale(1)",
+              transition: "all .4s ease",
+            }} />
+          : <div style={{
+              width: "100%", height: "100%",
+              background: `linear-gradient(160deg, ${c.surface}, ${c.card})`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "'Cormorant Garamond', serif", fontSize: 72,
+              color: c.gold, opacity: .2,
+            }}>{u.avatar}</div>
         }
+ 
+        {/* Blurred sign-up overlay */}
         {isBlurred && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, zIndex: 3 }}>
-            <div style={{ fontSize: 28 }}>🔐</div>
-            <div style={{ color: "#fff", fontWeight: 600, fontSize: 13, textAlign: "center", lineHeight: 1.4 }}>Sign up to<br />view profile</div>
+          <div style={{
+            position: "absolute", inset: 0,
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", gap: 8, zIndex: 3,
+          }}>
+            <div style={{ fontSize: 32 }}>🔐</div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 13, textAlign: "center", lineHeight: 1.5 }}>
+              Sign up to<br />view profile
+            </div>
           </div>
         )}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 50, background: "linear-gradient(to top,#0a0a0fcc,transparent)" }} />
-        <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "center", gap: 6, background: "#0a0a0f99", padding: "3px 8px", borderRadius: 20, zIndex: 2 }}>
-          <OnlineDot on={u.online} />
-          <span style={{ fontSize: 10, color: u.online ? c.green : c.dim }}>{u.online ? "Live" : "Offline"}</span>
+ 
+        {/* Bottom gradient fade */}
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0, height: 120,
+          background: "linear-gradient(to top, rgba(13,10,18,0.95) 0%, transparent 100%)",
+        }} />
+ 
+        {/* Name + rate overlaid on photo */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "16px 18px", zIndex: 2 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div>
+              <div style={{
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: 22, fontWeight: 600,
+                color: "#fff", lineHeight: 1.1, marginBottom: 2,
+              }}>{u.name}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <OnlineDot on={u.online} />
+                <span style={{ fontSize: 11, color: u.online ? c.green : "#ffffff50", fontWeight: 500 }}>
+                  {u.online ? "Available now" : "Offline"}
+                </span>
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              {u.country === "Nigeria" && <div style={{ fontSize: 12, marginBottom: 2 }}>🇳🇬</div>}
+              <div style={{
+                fontFamily: "'Cormorant Garamond', serif",
+                fontSize: 26, fontWeight: 600,
+                color: c.goldL, lineHeight: 1,
+              }}>
+                {u.country === "Nigeria" ? "₦" : S}{u.rate}
+              </div>
+              <div style={{ fontSize: 10, color: "#ffffff50", marginTop: 2 }}>per call</div>
+            </div>
+          </div>
         </div>
+ 
+        {/* Photo navigation */}
         {!isBlurred && photos.length > 1 && (
           <>
-            <button onClick={e => { e.stopPropagation(); setIdx(p => (p - 1 + photos.length) % photos.length); }} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", background: "#0a0a0faa", border: "none", color: c.text, width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 18, zIndex: 2 }}>‹</button>
-            <button onClick={e => { e.stopPropagation(); setIdx(p => (p + 1) % photos.length); }}                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "#0a0a0faa", border: "none", color: c.text, width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 18, zIndex: 2 }}>›</button>
-            <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 4, zIndex: 2 }}>
-              {photos.map((_, di) => <div key={di} onClick={e => { e.stopPropagation(); setIdx(di); }} style={{ width: di === idx ? 16 : 6, height: 6, borderRadius: 3, background: di === idx ? c.gold : "#ffffff55", cursor: "pointer" }} />)}
+            <button onClick={e => { e.stopPropagation(); setIdx(p => (p - 1 + photos.length) % photos.length); }}
+              style={{ position: "absolute", left: 10, top: "40%", transform: "translateY(-50%)", background: "rgba(13,10,18,0.7)", backdropFilter: "blur(4px)", border: "1px solid #ffffff18", color: "#fff", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", fontSize: 16, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+            <button onClick={e => { e.stopPropagation(); setIdx(p => (p + 1) % photos.length); }}
+              style={{ position: "absolute", right: 10, top: "40%", transform: "translateY(-50%)", background: "rgba(13,10,18,0.7)", backdropFilter: "blur(4px)", border: "1px solid #ffffff18", color: "#fff", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", fontSize: 16, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+            <div style={{ position: "absolute", bottom: 70, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5, zIndex: 2 }}>
+              {photos.map((_, di) => (
+                <div key={di} onClick={e => { e.stopPropagation(); setIdx(di); }}
+                  style={{ width: di === idx ? 18 : 5, height: 5, borderRadius: 3, background: di === idx ? c.goldL : "#ffffff40", cursor: "pointer", transition: "all .2s" }} />
+              ))}
             </div>
           </>
         )}
       </div>
-
-      <div style={{ padding: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>{u.name}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {u.country === 'Nigeria' && <span style={{ fontSize: 14 }}>🇳🇬</span>}
-            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: c.goldL, fontWeight: 600 }}>
-              {u.country === 'Nigeria' ? '₦' : S}{u.rate}
-            </div>
-          </div>
-        </div>
-        {!isBlurred && <HostRating hostId={u.id} />}
-        <div style={{ color: c.sub, fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
-          {showFullBio ? u.bio : `${(u.bio || "").slice(0, 80)}${(u.bio || "").length > 80 ? "…" : ""}`}
-          {(u.bio || "").length > 80 && (
-            <span onClick={e => { e.stopPropagation(); setShowFullBio(!showFullBio); }} style={{ color: c.gold, cursor: "pointer", marginLeft: 5, fontSize: 11 }}>
-              {showFullBio ? "show less" : "more"}
+ 
+      {/* Card body */}
+      <div style={{ padding: "14px 18px 18px" }}>
+ 
+        {/* Rating */}
+        {!isBlurred && <div style={{ marginBottom: 10 }}><HostRating hostId={u.id} /></div>}
+ 
+        {/* Bio */}
+        <div style={{ color: c.sub, fontSize: 12.5, lineHeight: 1.65, marginBottom: 12, minHeight: 38 }}>
+          {showFullBio ? u.bio : `${(u.bio || "").slice(0, 72)}${(u.bio || "").length > 72 ? "…" : ""}`}
+          {(u.bio || "").length > 72 && (
+            <span onClick={e => { e.stopPropagation(); setShowFullBio(!showFullBio); }}
+              style={{ color: c.gold, cursor: "pointer", marginLeft: 4, fontSize: 11, opacity: .8 }}>
+              {showFullBio ? "less" : "more"}
             </span>
           )}
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
+ 
+        {/* Tags */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 16 }}>
           {isBlurred
-            ? [1, 2, 3].map(i => <Chip key={i} label="••••" />)
+            ? [1,2,3].map(i => <Chip key={i} label="••••" />)
             : <>
-                {safeArr(u.tags).slice(0, 3).map(t => <Chip key={t} label={t} color={c.goldD} />)}
-                {safeArr(u.tags).length > 3 && <Chip label={`+${safeArr(u.tags).length - 3}`} color={c.sub} />}
+                {safeArr(u.tags).slice(0, 3).map(t => (
+                  <span key={t} style={{
+                    padding: "3px 10px", borderRadius: 20,
+                    background: `${c.gold}10`,
+                    border: `1px solid ${c.gold}25`,
+                    fontSize: 11, color: c.goldL,
+                    fontWeight: 500, letterSpacing: .2,
+                  }}>{t}</span>
+                ))}
+                {safeArr(u.tags).length > 3 && (
+                  <span style={{
+                    padding: "3px 10px", borderRadius: 20,
+                    background: `${c.dim}20`, border: `1px solid ${c.dim}30`,
+                    fontSize: 11, color: c.sub,
+                  }}>+{safeArr(u.tags).length - 3}</span>
+                )}
               </>
           }
         </div>
+ 
+        {/* Footer */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 12, color: c.sub }}>via</span>
-            <span style={{ fontSize: 12, fontWeight: 500 }}>{u.platform || "WhatsApp"}</span>
+          <div style={{ fontSize: 11, color: c.dim }}>
+            via <span style={{ color: c.sub, fontWeight: 500 }}>{u.platform || "WhatsApp"}</span>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {!isBlurred && (
-              <button onClick={e => { e.stopPropagation(); onReport(u); }} style={{ background: "none", border: "none", color: c.dim, fontSize: 12, cursor: "pointer", padding: "4px 8px", borderRadius: 6, transition: "all .2s" }}
+              <button onClick={e => { e.stopPropagation(); onReport(u); }}
+                style={{ background: "none", border: "none", color: c.dim, fontSize: 13, cursor: "pointer", padding: "4px 6px", borderRadius: 6, transition: "all .2s" }}
                 onMouseEnter={e => e.currentTarget.style.color = c.red}
-                onMouseLeave={e => e.currentTarget.style.color = c.dim}>⚠️</button>
+                onMouseLeave={e => e.currentTarget.style.color = c.dim}>⚠</button>
             )}
-            <Btn small onClick={e => { e.stopPropagation(); onConnect(u); }} style={{ padding: "6px 14px" }}>
+            <button
+              onClick={e => { e.stopPropagation(); onConnect(u); }}
+              style={{
+                padding: "9px 20px", borderRadius: 20,
+                background: c.gradWarm,
+                border: "none", color: "#fff",
+                fontSize: 12, fontWeight: 700,
+                cursor: "pointer", letterSpacing: .3,
+                fontFamily: "'Montserrat', sans-serif",
+                boxShadow: `0 4px 16px ${c.gold}25`,
+                transition: "all .2s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = ".88"; e.currentTarget.style.transform = "scale(1.03)"; }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "scale(1)"; }}>
               {isBlurred ? "Sign Up →" : "Connect →"}
-            </Btn>
+            </button>
           </div>
         </div>
       </div>

@@ -75,57 +75,160 @@ export function HomeView({ setView, users, favorites, toggleFavorite, currentUse
   );
 }
 
+// ─── HomeHostCard ─────────────────────────────────────────────────────────────
 export function HomeHostCard({ u, i, setView, favorites, toggleFavorite, currentUser }) {
   const isFav = favorites.some(f => f.host_id === u.id && f.watcher_id === currentUser?.id);
   const isBlurred = !currentUser;
+ 
   return (
-    <div className="fu" style={{ animationDelay: `${i * 0.05}s`, background: `linear-gradient(180deg,${c.card},#1a1a24)`, border: `1px solid ${c.border}`, borderRadius: 18, overflow: "hidden", cursor: "pointer", transition: "all .3s", position: "relative" }}
+    <div className="fi" style={{
+      animationDelay: `${i * 0.04}s`,
+      background: c.card,
+      border: `1px solid ${c.border}`,
+      borderRadius: 20,
+      overflow: "hidden",
+      cursor: "pointer",
+      transition: "all .35s cubic-bezier(.4,0,.2,1)",
+      position: "relative",
+    }}
       onClick={() => isBlurred ? setView("signup") : setView("browse")}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = c.gold; e.currentTarget.style.transform = "translateY(-4px)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.transform = ""; }}>
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = `${c.gold}55`;
+        e.currentTarget.style.transform = "translateY(-6px)";
+        e.currentTarget.style.boxShadow = `0 24px 60px ${c.gold}10, 0 8px 24px #00000055`;
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = c.border;
+        e.currentTarget.style.transform = "";
+        e.currentTarget.style.boxShadow = "";
+      }}>
+ 
+      {/* Favorite */}
       {currentUser && (
         <button onClick={e => { e.stopPropagation(); toggleFavorite(u.id); }}
-          style={{ position: "absolute", top: 12, right: 12, zIndex: 10, background: "#0a0a0fcc", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 16, color: isFav ? c.gold : c.sub }}>
+          style={{
+            position: "absolute", top: 12, right: 12, zIndex: 10,
+            background: "rgba(13,10,18,0.7)", backdropFilter: "blur(8px)",
+            border: `1px solid ${isFav ? c.gold + "50" : "#ffffff15"}`,
+            borderRadius: "50%", width: 32, height: 32,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", fontSize: 14,
+            color: isFav ? c.gold : "#ffffff60",
+            transition: "all .2s",
+          }}>
           {isFav ? "❤️" : "♡"}
         </button>
       )}
-      <div style={{ position: "relative", width: "100%", aspectRatio: "1/1", overflow: "hidden" }}>
-        {u.profilePhoto ? (
-          <img src={u.profilePhoto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: isBlurred ? "blur(4px) brightness(0.7)" : "none", transform: isBlurred ? "scale(1.05)" : "none", transition: "filter .3s" }} />
-        ) : (
-          <div style={{ width: "100%", height: "100%", background: `linear-gradient(135deg,${c.goldD},#1a1a2e)`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Cormorant Garamond',serif", fontSize: 48, color: c.gold, opacity: .3 }}>{u.avatar}</div>
-        )}
+ 
+      {/* Photo */}
+      <div style={{ position: "relative", width: "100%", aspectRatio: "3/4", overflow: "hidden" }}>
+        {u.profilePhoto
+          ? <img src={u.profilePhoto} alt="" style={{
+              width: "100%", height: "100%", objectFit: "cover",
+              filter: isBlurred ? "blur(6px) brightness(0.6)" : "none",
+              transform: isBlurred ? "scale(1.08)" : "scale(1.02)",
+              transition: "all .4s ease",
+            }} />
+          : <div style={{
+              width: "100%", height: "100%",
+              background: `linear-gradient(160deg, ${c.surface}, ${c.card})`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "'Cormorant Garamond', serif", fontSize: 56,
+              color: c.gold, opacity: .2,
+            }}>{u.avatar}</div>
+        }
+ 
         {isBlurred && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, zIndex: 3 }}>
+          <div style={{
+            position: "absolute", inset: 0, zIndex: 3,
+            display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
             <div style={{ fontSize: 28 }}>🔐</div>
-            <div style={{ color: "#fff", fontWeight: 600, fontSize: 13, textAlign: "center", lineHeight: 1.4 }}>Sign up to<br />view profile</div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 12, textAlign: "center", lineHeight: 1.5 }}>
+              Sign up to view
+            </div>
           </div>
         )}
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 40, background: "linear-gradient(to top,#0a0a0fcc,transparent)" }} />
-        <div style={{ position: "absolute", top: 10, right: 12, display: "flex", alignItems: "center", gap: 5, background: "#0a0a0f99", padding: "3px 8px", borderRadius: 20, zIndex: 2 }}>
+ 
+        {/* Gradient overlay */}
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0, height: 130,
+          background: "linear-gradient(to top, rgba(13,10,18,0.96) 0%, transparent 100%)",
+        }} />
+ 
+        {/* Online badge */}
+        <div style={{
+          position: "absolute", top: 12, left: 12, zIndex: 2,
+          display: "flex", alignItems: "center", gap: 5,
+          background: "rgba(13,10,18,0.7)", backdropFilter: "blur(6px)",
+          padding: "4px 10px", borderRadius: 20,
+          border: `1px solid ${u.online ? c.green + "40" : "#ffffff10"}`,
+        }}>
           <OnlineDot on={u.online} />
-          <span style={{ fontSize: 10, color: u.online ? c.green : c.dim }}>{u.online ? "Live" : "Offline"}</span>
+          <span style={{ fontSize: 10, color: u.online ? c.green : "#ffffff40", fontWeight: 600 }}>
+            {u.online ? "Live" : "Offline"}
+          </span>
+        </div>
+ 
+        {/* Name + rate on photo */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "14px 16px", zIndex: 2 }}>
+          <div style={{
+            fontFamily: "'Cormorant Garamond', serif",
+            fontSize: 20, fontWeight: 600, color: "#fff",
+            marginBottom: 2, lineHeight: 1.1,
+          }}>{u.name}</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 11, color: "#ffffff50" }}>
+              {`${(u.bio || "").slice(0, 28)}${(u.bio || "").length > 28 ? "…" : ""}`}
+            </div>
+            <div style={{
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: 20, fontWeight: 600, color: c.goldL,
+            }}>
+              {u.country === "Nigeria" ? "₦" : S}{u.rate}
+            </div>
+          </div>
         </div>
       </div>
-      <div style={{ padding: "14px 16px 16px" }}>
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 2 }}>{u.name}</div>
-        {!isBlurred && <HostRating hostId={u.id} />}
-        {!isBlurred && <HostResponseRate hostId={u.id} />}
-        <div style={{ color: c.sub, fontSize: 11, marginBottom: 8 }}>
-          {`${(u.bio || "").slice(0, 45)}${(u.bio || "").length > 45 ? "…" : ""}`}
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+ 
+      {/* Body */}
+      <div style={{ padding: "12px 16px 16px" }}>
+ 
+        {!isBlurred && (
+          <div style={{ marginBottom: 10 }}>
+            <HostRating hostId={u.id} />
+          </div>
+        )}
+ 
+        {/* Tags */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 14 }}>
           {isBlurred
-            ? [1, 2].map(i => <Chip key={i} label="••••" />)
-            : safeArr(u.tags).slice(0, 3).map(t => <Chip key={t} label={t} />)
+            ? [1,2].map(i => <Chip key={i} label="••••" />)
+            : safeArr(u.tags).slice(0, 3).map(t => (
+                <span key={t} style={{
+                  padding: "3px 9px", borderRadius: 20,
+                  background: `${c.gold}10`,
+                  border: `1px solid ${c.gold}20`,
+                  fontSize: 10, color: c.goldL, fontWeight: 500,
+                }}>{t}</span>
+              ))
           }
         </div>
+ 
+        {/* CTA row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, color: c.goldL, fontWeight: 600 }}>{S}{u.rate}</div>
-            <div style={{ color: c.dim, fontSize: 10 }}>via {u.platform}</div>
+          <div style={{ fontSize: 11, color: c.dim }}>
+            via <span style={{ color: c.sub }}>{u.platform || "WhatsApp"}</span>
           </div>
-          <div style={{ width: 30, height: 30, borderRadius: "50%", border: `1px solid ${isBlurred ? c.sub + "50" : c.gold + "50"}`, display: "flex", alignItems: "center", justifyContent: "center", color: isBlurred ? c.sub : c.gold, fontSize: 13 }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: "50%",
+            background: isBlurred ? `${c.dim}20` : c.gradWarm,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 14, color: isBlurred ? c.dim : "#fff",
+            boxShadow: isBlurred ? "none" : `0 4px 14px ${c.gold}30`,
+            transition: "all .2s",
+          }}>
             {isBlurred ? "🔒" : "→"}
           </div>
         </div>
